@@ -1,0 +1,12 @@
+# Canonical meter: Kubernetes pod exec time
+# Consumed by OpenMeter via runtime injection (OPENMETER_METERS_CONFIG).
+# Operators may add their own meters under spec/meters/ and inject them at runtime.
+
+slug: kubernetes-pod-exec-time
+description: Kubernetes pod exec time
+eventType: kube-pod-exec-time
+valueProperty: $.duration_seconds
+aggregation: SUM
+groupBy:
+  pod_name: $.pod_name
+  pod_namespace: $.pod_namespace

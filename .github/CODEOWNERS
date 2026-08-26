@@ -1,0 +1,18 @@
+# CODEOWNERS — auto-assign reviewers by file path
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Architecture docs
+AGENTS.md                     @thesachinmalhotra
+docs/architecture.md          @thesachinmalhotra
+
+# Platform composition (bundles, collector, economic, archive, runtime)
+platform/                     @thesachinmalhotra
+
+# Canonical schemas (CloudEvent contract, meters)
+spec/                         @thesachinmalhotra
+
+# Distribution and certification
+dist/                         @thesachinmalhotra
+
+# CI workflows — gatekeeper
+.github/workflows/            @thesachinmalhotra
