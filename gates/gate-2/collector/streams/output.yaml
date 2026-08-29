@@ -8,9 +8,16 @@ buffer:
       - split: {}
 
 output:
-  openmeter:
-    url: "${OPENMETER_URL:https://openmeter.cloud}"
-    token: "${OPENMETER_TOKEN:}"
-    batching:
-      count: ${BATCH_SIZE:1}
-      period: ${BATCH_PERIOD:30s}
+  broker:
+    pattern: fan_out
+    outputs:
+      - openmeter:
+          url: "${OPENMETER_URL:https://openmeter.cloud}"
+          token: "${OPENMETER_TOKEN:}"
+          batching:
+            count: ${BATCH_SIZE:1}
+            period: ${BATCH_PERIOD:30s}
+      - kafka:
+          addresses: [kafka:9092]
+          topic: welkin_canonical
+          client_id: welkin-collector
