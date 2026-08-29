@@ -14,7 +14,7 @@ http:
 
 input:
   kafka:
-    addresses: [kafka:9092]
+    addresses: ["${KAFKA_BROKERS:-kafka:9092}"]
     topics: [welkin_canonical]
     consumer_group: welkin-archive
     start_from_oldest: false

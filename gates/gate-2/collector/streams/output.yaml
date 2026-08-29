@@ -18,6 +18,6 @@ output:
             count: ${BATCH_SIZE:1}
             period: ${BATCH_PERIOD:30s}
       - kafka:
-          addresses: [kafka:9092]
+          addresses: ["${KAFKA_BROKERS:-kafka:9092}"]
           topic: welkin_canonical
           client_id: welkin-collector

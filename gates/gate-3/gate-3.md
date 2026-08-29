@@ -39,6 +39,20 @@ ARCHIVE_SECRET_KEY=...
 AWS S3. The `archive` service in `docker-compose.yaml` passes these through, so `up -d`
 works locally (MinIO) and prod swaps stores by env alone.
 
+## Environment (self-hosted vs managed — env only, no config edits)
+Every external dependency is parameterized. Copy `gates/gate-3/.env.example` to `.env`
+and fill it; docker compose auto-loads it. The same config runs locally and in prod:
+
+| Variable | Local (this Gate) | Managed / prod |
+|----------|-------------------|----------------|
+| `OPENMETER_URL` / `OPENMETER_TOKEN` | `http://openmeter:8888` / empty | `https://openmeter.cloud` / `om_xxx` |
+| `KAFKA_BROKERS` | `kafka:9092` | your broker(s) |
+| `ARCHIVE_ENDPOINT` / `ARCHIVE_BUCKET` | `http://minio:9000` / `welkin-archive` | R2 / S3 / GCS + bucket |
+| `ARCHIVE_ACCESS_KEY` / `ARCHIVE_SECRET_KEY` | `minioadmin` | real store creds |
+
+The Collector and Archive pipelines read these via `${VAR:-default}`, so swapping a plane
+for a managed service is an env change, never a code or config change.
+
 ## AGENTS.md rule 3 (planes share the event, not failure fate)
 The Collector buffers and retries each sink independently. Archive death does not stop
 Economic processing, and vice versa. Proven by the decoupling check below.
@@ -47,6 +61,7 @@ Economic processing, and vice versa. Proven by the decoupling check below.
 ```bash
 OPENMETER_REPO=/home/sachin/projects/personal/openmeter \
   docker compose -f gates/gate-3/docker-compose.yaml up -d
+sleep 15   # let kafka/openmeter become ready before topic creation
 docker compose -f gates/gate-3/docker-compose.yaml exec kafka \
   kafka-topics --create --topic welkin_canonical --bootstrap-server kafka:9092 \
   --partitions 1 --replication-factor 1

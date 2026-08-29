@@ -44,6 +44,7 @@ services:
       minio:
         condition: service_started
     environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
       ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-welkin-archive}
       ARCHIVE_ENDPOINT: ${ARCHIVE_ENDPOINT:-http://minio:9000}
       ARCHIVE_FORCE_PATH_STYLE: ${ARCHIVE_FORCE_PATH_STYLE:-true}
