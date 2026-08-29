@@ -17,7 +17,7 @@
 #     docker compose -f gates/gate-3/docker-compose.yaml up -d
 
 include:
-  - ${OPENMETER_REPO:-/home/sachin/projects/personal/openmeter}/quickstart/docker-compose.yaml
+  - ../gate-2/docker-compose.yaml
 
 services:
   minio:
