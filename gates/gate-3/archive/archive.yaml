@@ -1,0 +1,61 @@
+# Welkin Archive Plane pipeline (upstream composition only).
+#
+# Consumes the Canonical CloudEvent off the broker (OpenMeter's Kafka topic
+# om_default_events) and writes it to object storage as Parquet, using the
+# upstream Redpanda Connect components: kafka (input) -> aws_s3 (output) with
+# the parquet_encode processor. No custom code.
+#
+# OpenMeter serializes CloudEvents to Kafka as CloudEventsKafkaPayload:
+#   {id, type, source, subject, time(<epoch ms int64>), data(<JSON string>)}
+# so `data` is parse_json'd before field access.
+
+http:
+  enabled: false
+
+input:
+  kafka:
+    addresses: [kafka:9092]
+    topics: [om_default_events]
+    consumer_group: welkin-archive
+    start_from_oldest: false
+
+pipeline:
+  processors:
+    - mapping: |
+        let d = this.data.parse_json()
+        root = {
+          "id": this.id,
+          "source": this.source,
+          "type": this.type,
+          "subject": this.subject,
+          "time": this.time.string(),
+          "method": $d.method,
+          "route": $d.route,
+          "duration_ms": $d.duration_ms
+        }
+
+output:
+  aws_s3:
+    bucket: welkin-archive
+    endpoint: http://minio:9000
+    force_path_style_urls: true
+    region: us-east-1
+    credentials:
+      id: minioadmin
+      secret: minioadmin
+    path: events/${!counter()}-${!timestamp_unix_nano()}.parquet
+    batching:
+      count: 100
+      period: 10s
+      processors:
+        - parquet_encode:
+            schema:
+              - { name: id, type: UTF8 }
+              - { name: source, type: UTF8 }
+              - { name: type, type: UTF8 }
+              - { name: subject, type: UTF8 }
+              - { name: time, type: UTF8 }
+              - { name: method, type: UTF8 }
+              - { name: route, type: UTF8 }
+              - { name: duration_ms, type: INT64 }
+            default_compression: zstd
