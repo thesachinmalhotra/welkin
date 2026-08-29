@@ -1,0 +1,20 @@
+# Reconiles the signed+encrypted artifact. SOPS decrypts secrets at apply
+# time; cosign verification happens in the OCIRepository. Cilium/kyverno/
+# strimzi install ordering is encoded in the rendered HelmRelease dependsOn.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: welkin
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: "./"
+  prune: true
+  sourceRef:
+    kind: OCIRepository
+    name: welkin
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  timeout: 15m

@@ -1,0 +1,27 @@
+# Baseline allows required for any pod to function under the cluster-wide
+# default-deny. These are NOT workload-specific — they are cluster plumbing
+# (DNS resolution, API server reachability, Cilium health). Workload
+# isolation (e.g. OpenMeter) is enforced by P5 policies on top of this floor.
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: allow-base-dns-and-api
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEntities:
+        - cilium-health
+        - host

@@ -1,0 +1,46 @@
+# KafkaUser per workload. ACLs are LITERAL and least-privilege.
+#   welkin-collector-kafka -> Write/Describe on welkin_canonical (producer)
+#   welkin-archive-kafka   -> Read/Describe on welkin_canonical + group (consumer)
+#   welkin-openmeter-kafka -> ONLY OpenMeter's internal topics (om_*);
+#                             NO rule grants access to welkin_canonical.
+# The User Operator emits a Secret (same name) with ca.crt/user.crt/user.key,
+# mounted by the Collector/Archive at /etc/kafka/tls.
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: welkin-collector-kafka
+  namespace: welkin-system
+  labels:
+    strimzi.io/cluster: welkin-kafka
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      - resource: {type: topic, name: welkin_canonical, patternType: literal}
+        operations: ["Write", "Describe"]
+      - resource: {type: topic, name: welkin_canonical, patternType: literal}
+        operations: ["Create"]
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: welkin-archive-kafka
+  namespace: welkin-system
+  labels:
+    strimzi.io/cluster: welkin-kafka
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      - resource: {type: topic, name: welkin_canonical, patternType: literal}
+        operations: ["Read", "Describe"]
+      - resource: {type: group, name: welkin-archive, patternType: literal}
+        operations: ["Read"]
+# NOTE: OpenMeter has NO KafkaUser on welkin-kafka. It uses its own bundled
+# Kafka (openmeter-system) for the economic plane. Zero relationship to the
+# canonical bus means zero ACL surface — the boundary holds by omission.
