@@ -36,13 +36,13 @@ pipeline:
 
 output:
   aws_s3:
-    bucket: welkin-archive
-    endpoint: http://minio:9000
-    force_path_style_urls: true
-    region: us-east-1
+    bucket: ${ARCHIVE_BUCKET:-welkin-archive}
+    endpoint: ${ARCHIVE_ENDPOINT:-http://minio:9000}
+    force_path_style_urls: ${ARCHIVE_FORCE_PATH_STYLE:-true}
+    region: ${ARCHIVE_REGION:-us-east-1}
     credentials:
-      id: minioadmin
-      secret: minioadmin
+      id: ${ARCHIVE_ACCESS_KEY:-minioadmin}
+      secret: ${ARCHIVE_SECRET_KEY:-minioadmin}
     path: events/${!counter()}-${!timestamp_unix_nano()}.parquet
     batching:
       count: 100

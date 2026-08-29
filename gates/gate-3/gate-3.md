@@ -21,6 +21,24 @@ Plane works identically for **self-hosted AND managed/SaaS OpenMeter**: only
 `OPENMETER_URL`/`OPENMETER_TOKEN` (Collector → OpenMeter) change. OpenMeter is treated
 as an untrusted SaaS sink we do not control.
 
+## Object storage is interchangeable (not coupled to MinIO)
+The Archive pipeline uses the upstream `aws_s3` output, which is S3-compatible. **MinIO
+is only the local-dev stand-in** (exactly like the OpenMeter quickstart is the local
+stand-in for OpenMeter). Point it at any store via env — no pipeline edit:
+
+```
+ARCHIVE_ENDPOINT=https://<account>.r2.cloudflarestorage.com   # or s3.amazonaws.com, etc.
+ARCHIVE_BUCKET=welkin-archive
+ARCHIVE_REGION=auto
+ARCHIVE_FORCE_PATH_STYLE=true
+ARCHIVE_ACCESS_KEY=...
+ARCHIVE_SECRET_KEY=...
+```
+
+`force_path_style_urls` stays `true` for MinIO/R2; set `false` only for virtual-hosted
+AWS S3. The `archive` service in `docker-compose.yaml` passes these through, so `up -d`
+works locally (MinIO) and prod swaps stores by env alone.
+
 ## AGENTS.md rule 3 (planes share the event, not failure fate)
 The Collector buffers and retries each sink independently. Archive death does not stop
 Economic processing, and vice versa. Proven by the decoupling check below.

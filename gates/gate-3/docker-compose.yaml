@@ -32,6 +32,10 @@ services:
     volumes:
       - minio_data:/data
 
+  # Archive Plane. Storage-agnostic: any S3-compatible store via ARCHIVE_* env.
+  # MinIO below is only the LOCAL test stand-in (like the OpenMeter quickstart is
+  # the local stand-in for OpenMeter). For prod set ARCHIVE_ENDPOINT/BUCKET/REGION/
+  # ACCESS_KEY/SECRET to R2 / S3 / Spaces / etc.
   archive:
     image: ghcr.io/openmeterio/benthos-collector:latest
     depends_on:
@@ -39,6 +43,13 @@ services:
         condition: service_started
       minio:
         condition: service_started
+    environment:
+      ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-welkin-archive}
+      ARCHIVE_ENDPOINT: ${ARCHIVE_ENDPOINT:-http://minio:9000}
+      ARCHIVE_FORCE_PATH_STYLE: ${ARCHIVE_FORCE_PATH_STYLE:-true}
+      ARCHIVE_REGION: ${ARCHIVE_REGION:-us-east-1}
+      ARCHIVE_ACCESS_KEY: ${ARCHIVE_ACCESS_KEY:-minioadmin}
+      ARCHIVE_SECRET_KEY: ${ARCHIVE_SECRET_KEY:-minioadmin}
     volumes:
       - type: bind
         source: ./archive
