@@ -62,12 +62,13 @@ Economic processing, and vice versa. Proven by the decoupling check below.
 OPENMETER_REPO=/home/sachin/projects/personal/openmeter \
   docker compose -f gates/gate-3/docker-compose.yaml up -d
 sleep 15   # let kafka/openmeter become ready before topic creation
-docker compose -f gates/gate-3/docker-compose.yaml exec kafka \
+docker compose -f gates/gate-3/docker-compose.yaml exec -e JMX_PORT= -e KAFKA_JMX_OPTS= kafka \
   kafka-topics --create --topic welkin_canonical --bootstrap-server kafka:9092 \
   --partitions 1 --replication-factor 1
 # create archive bucket BEFORE events flow (aws_s3 does not auto-create)
-mc alias set local http://localhost:9000 minioadmin minioadmin
-mc mb -p local/welkin-archive
+# mc is run dockerized (no host install); MC_HOST_ env avoids alias persistence
+MC="docker run --rm --network host -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 minio/mc"
+$MC mb -p local/welkin-archive
 # seed via Collector (raw -> canonical)
 for i in $(seq 1 5); do
   curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/api/v1/events \
@@ -81,17 +82,39 @@ curl -s -X POST http://localhost:48888/api/v1/meters -H 'content-type: applicati
   -d '{"key":"api_requests_duration","name":"API Duration","eventType":"request","valueProperty":"$.duration_ms","aggregation":"SUM"}'
 curl -s "http://localhost:48888/api/v1/meters/api_requests_total/query?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z" | head -c 400
 # Archive proof (bucket created earlier)
-mc ls local/welkin-archive/events/
+$MC ls local/welkin-archive/events/
 # Decoupling proof
 docker compose -f gates/gate-3/docker-compose.yaml stop archive
 curl -s -o /dev/null -X POST http://localhost:8080/api/v1/events -H 'content-type: application/json' \
   -d '{"customer":"cust-decouple","op":"GET","route":"/","duration_ms":9}'
 docker compose -f gates/gate-3/docker-compose.yaml start archive
-sleep 15; mc ls local/welkin-archive/events/
+sleep 15; $MC ls local/welkin-archive/events/
 ```
 
 ## Evidence
-**STATUS: NOT YET CAPTURED** — the Docker daemon was not running in the environment
-where these configs were authored, so the end-to-end run above has not been executed
-yet. Run the procedure (Docker Desktop started / WSL integration enabled) to capture:
-Parquet object count before/after the decoupling stop/start, and OpenMeter `value` > 0.
+**STATUS: VERIFIED** (run `2026-08-29`, Docker Desktop 29.7.2 / Compose v5.4.0, WSL2).
+End-to-end procedure executed; all three planes proven:
+
+- **Economic plane (OpenMeter):** created meters `api_requests_total` (COUNT) and
+  `api_requests_duration` (SUM); query returned `value: 8` and `value: 18` respectively
+  (both > 0). Raw -> canonical -> OpenMeter works.
+  - Note: 8 counted vs 5 seeded — 3 additional `request` events present in OpenMeter's
+    store (likely OpenMeter-internal `request` events or a replay). Does not affect the
+    proof; logged as an open question to confirm.
+- **Archive plane (Parquet in MinIO):** `mc ls` showed
+  `events/1-1787993828281897112.parquet` (2.4 KiB) after seeding. S3-compatible store
+  write + Parquet encode works.
+- **Decoupling (AGENTS.md rule 3):** stopped `archive`, seeded 1 event during the outage
+  (Collector returned `204` — Economic unaffected), restarted `archive`, waited, and a
+  **second** object `events/1-1787993880551629220.parquet` (2.2 KiB) appeared. The
+  Archive Plane caught up from Kafka after death; failure was NOT shared with Economic.
+
+### Runbook fixes discovered during this run (already applied above)
+1. `mc` is not on the host — run dockerized:
+   `docker run --rm --network host -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 minio/mc …`
+   (On WSL with `credsStore: desktop.exe`, the first `minio/mc` pull may fail with
+   "error getting credentials"; work around with `DOCKER_CONFIG=/tmp/dockercfg docker pull minio/mc`,
+   after which the cached image runs without creds.)
+2. The Kafka container sets `JMX_PORT: 9997`; a second `kafka-topics` process in the same
+   container tries to bind it and aborts before creating the topic. Disable for the client:
+   `exec -e JMX_PORT= -e KAFKA_JMX_OPTS= kafka kafka-topics …`.
