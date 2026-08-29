@@ -39,7 +39,8 @@ product: {
 		batchPeriod: "15s"
 	}
 
-	// Canonical CloudEvent contract version (mirrors spec/schema/cloudevents.cue).
+	// Canonical CloudEvent contract version. The runtime enforcement is the
+	// collector's inline json_schema (DECISION A); this value is what it pins.
 	canonical: {
 		specversion: "1.0"
 	}
@@ -313,8 +314,9 @@ collectorValues: {
 					},
 					{
 						label: "validation"
-						// Mirrors spec/schema/cloudevents.cue — keep in sync.
-						// CUE is the canonical contract; this is the runtime enforcement.
+					// Runtime enforcement of the Welkin-canonical CloudEvent.
+					// This inline schema is the single source of validation (no
+					// separate spec file to drift from).
 						json_schema: {
 							schema: "{\"type\":\"object\",\"required\":[\"specversion\",\"id\",\"source\",\"type\",\"time\",\"subject\",\"data\"],\"properties\":{\"specversion\":{\"type\":\"string\",\"const\":\"1.0\"},\"id\":{\"type\":\"string\",\"minLength\":1},\"source\":{\"type\":\"string\",\"minLength\":1},\"type\":{\"type\":\"string\",\"minLength\":1},\"time\":{\"type\":\"string\",\"format\":\"date-time\"},\"subject\":{\"type\":\"string\",\"minLength\":1},\"data\":{\"type\":\"object\"}}}"
 						}

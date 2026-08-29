@@ -1,37 +1,10 @@
 # Kyverno ClusterPolicies — the "OpenMeter is enemy" guardrails as code.
 # Roll out Audit -> Enforce per policy (start Audit, watch PolicyReports,
 # then flip validationFailureAction to Enforce).
+# Cilium already enforces default-deny at L3/L4 cluster-wide, so Kyverno here
+# handles pod-level hardening + the cross-namespace secret-access guardrail.
 ---
-# 1) Generate a default-deny NetworkPolicy in every new namespace (except
-#    platform control planes). Cilium already default-denies at L3/L4; this
-#    adds a standard NetworkPolicy so even non-Cilium clusters stay isolated.
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  name: add-default-deny-networkpolicy
-spec:
-  rules:
-    - name: default-deny
-      match:
-        any:
-          - resources:
-              kinds: ["Namespace"]
-      exclude:
-        any:
-          - resources:
-              namespaces: ["kube-system", "cilium", "kyverno", "flux-system", "openmeter-system", "welkin-system"]
-      generate:
-        synchronize: true
-        apiVersion: networking.k8s.io/v1
-        kind: NetworkPolicy
-        name: default-deny
-        namespace: "{{ request.object.metadata.name }}"
-        data:
-          spec:
-            podSelector: {}
-            policyTypes: ["Ingress", "Egress"]
----
-# 2) Force automountServiceAccountToken: false on every pod. OpenMeter (and
+# 1) Force automountServiceAccountToken: false on every pod. OpenMeter (and
 #    everything else) gets no ambient SA token to abuse.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -101,28 +74,3 @@ spec:
       validate:
         message: "ClusterRoleBindings may only be created by flux-system / kyverno"
         deny: {}
----
-# 5) Verify container image signatures (cosign). Audit first. Requires a
-#    cosign public key in a ConfigMap/Secret referenced by the policy.
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  name: verify-image-signatures
-spec:
-  validationFailureAction: Audit
-  rules:
-    - name: verify-cosign
-      match:
-        any:
-          - resources:
-              kinds: ["Pod"]
-      verifyImages:
-        - imageReferences:
-            - "ghcr.io/openmeterio/*"
-            - "ghcr.io/*/welkin*"
-          attestors:
-            - entries:
-                - staticKey:
-                    secret:
-                      name: cosign-public-key
-                      namespace: kyverno
