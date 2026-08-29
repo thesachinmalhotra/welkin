@@ -50,16 +50,22 @@ OPENMETER_REPO=/home/sachin/projects/personal/openmeter \
 docker compose -f gates/gate-3/docker-compose.yaml exec kafka \
   kafka-topics --create --topic welkin_canonical --bootstrap-server kafka:9092 \
   --partitions 1 --replication-factor 1
+# create archive bucket BEFORE events flow (aws_s3 does not auto-create)
+mc alias set local http://localhost:9000 minioadmin minioadmin
+mc mb -p local/welkin-archive
 # seed via Collector (raw -> canonical)
 for i in $(seq 1 5); do
   curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/api/v1/events \
     -H 'content-type: application/json' \
     -d "{\"customer\":\"cust-$i\",\"op\":\"GET\",\"route\":\"/\",\"duration_ms\":$i}"
 done
-# Economic proof
+# Economic proof — OpenMeter does NOT auto-create meters; define them first
+curl -s -X POST http://localhost:48888/api/v1/meters -H 'content-type: application/json' \
+  -d '{"key":"api_requests_total","name":"API Requests","eventType":"request","aggregation":"COUNT"}'
+curl -s -X POST http://localhost:48888/api/v1/meters -H 'content-type: application/json' \
+  -d '{"key":"api_requests_duration","name":"API Duration","eventType":"request","valueProperty":"$.duration_ms","aggregation":"SUM"}'
 curl -s "http://localhost:48888/api/v1/meters/api_requests_total/query?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z" | head -c 400
-# Archive proof
-mc alias set local http://localhost:9000 minioadmin minioadmin
+# Archive proof (bucket created earlier)
 mc ls local/welkin-archive/events/
 # Decoupling proof
 docker compose -f gates/gate-3/docker-compose.yaml stop archive

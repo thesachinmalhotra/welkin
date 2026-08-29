@@ -192,15 +192,22 @@ Expected: five `204` (Collector accepted + canonicalized).
 
 - [ ] **Step 4: Economic proof — OpenMeter received + metered**
 
+OpenMeter does NOT auto-create meters; define them first:
 ```bash
+curl -s -X POST http://localhost:48888/api/v1/meters -H 'content-type: application/json' \
+  -d '{"key":"api_requests_total","name":"API Requests","eventType":"request","aggregation":"COUNT"}'
+curl -s -X POST http://localhost:48888/api/v1/meters -H 'content-type: application/json' \
+  -d '{"key":"api_requests_duration","name":"API Duration","eventType":"request","valueProperty":"$.duration_ms","aggregation":"SUM"}'
 curl -s "http://localhost:48888/api/v1/meters/api_requests_total/query?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z" | head -c 400
 ```
 Expected: JSON containing a `value` > 0 (OpenMeter aggregated the Collector's events).
 
 - [ ] **Step 5: Archive proof — Parquet in MinIO from our topic**
 
+`aws_s3` does NOT auto-create buckets; create it first:
 ```bash
 mc alias set local http://localhost:9000 minioadmin minioadmin
+mc mb -p local/welkin-archive
 mc ls local/welkin-archive/events/
 ```
 Expected: one or more `events/*.parquet` objects (Collector fan-out → Kafka → Archive → MinIO).
