@@ -29,8 +29,6 @@ services:
       - "/etc/collector/config.yaml"
       - "--log.level"
       - "debug"
-      - "--resources"
-      - "/etc/collector/resources/*.yaml"
       - "streams"
       - "--no-api"
       - "/etc/collector/streams/*.yaml"

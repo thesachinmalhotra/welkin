@@ -5,12 +5,3 @@ http:
 
 metrics:
   prometheus: {}
-
-#tracer:
-#  open_telemetry_collector:
-#    grpc:
-#      - address: <host>:4317
-#    tags:
-#      application: openmeter-collector
-#    sampling:
-#      enabled: false
