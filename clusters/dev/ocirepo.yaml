@@ -1,6 +1,8 @@
 # Flux OCIRepository for the Welkin platform artifact.
-# Pulls the cosign-signed OCI artifact built by .github/workflows/build.yaml.
-# Promotion dev->staging->prod = repin `spec.ref.tag` (no rebuild).
+# Pulls the keyless-cosign-signed OCI artifact built by .github/workflows/build.yaml.
+# Verification binds the OIDC identity of the build workflow (matchOIDCIdentity),
+# not a long-lived public key. Promotion dev->staging->prod = repin `spec.ref.tag`
+# (no rebuild).
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
@@ -8,10 +10,13 @@ metadata:
   namespace: flux-system
 spec:
   interval: 5m
-  url: oci://ghcr.io/OWNER/welkin-manifests
+  url: oci://ghcr.io/thesachinmalhotra/welkin-manifests
   ref:
     tag: "REPLACE_WITH_PINNED_TAG"
   verify:
     provider: cosign
-    secretRef:
-      name: cosign-public-key
+    matchOIDCIdentity:
+      - issuer: "^https://token.actions.githubusercontent.com$"
+        subject: "^https://github.com/thesachinmalhotra/welkin/.github/workflows/build.yaml@refs/heads/main$"
+      - issuer: "^https://token.actions.githubusercontent.com$"
+        subject: "^https://github.com/thesachinmalhotra/welkin/.github/workflows/build.yaml@refs/tags/v.*$"

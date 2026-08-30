@@ -24,14 +24,19 @@ OpenMeter Collector (benthos-collector)   ← canonicalization, validation, buff
 | Admission guardrails | Kyverno (no ClusterRoleBinding from `openmeter-system`) |
 | Labs/datastore | Postgres (cnpg) |
 | Secrets at rest | SOPS (age), decrypted by Flux |
-| Delivery | cosign-signed OCI artifact → Flux OCIRepository+Kustomization |
+| Delivery | keyless cosign-signed OCI artifact (Flux) → OCIRepository `verify.matchOIDCIdentity` → Kustomization |
 
 ## Lifecycle
 
 1. `platform/welkin.bundle.cue` — single source (Timoni bundle).
-2. CI `build.yaml` — `timoni bundle build` → encrypt secrets (SOPS) →
-   `timoni artifact push` → `cosign sign`.
-3. Flux `clusters/dev` — verify (cosign) + decrypt (SOPS) + reconcile.
+2. CI `build.yaml` — `timoni bundle build` → encrypt secrets (SOPS) → assemble
+   Flux artifact directory (`kustomization.yaml` + `welkin.yaml` +
+   `welkin-secrets.yaml`) → `kubectl kustomize` validates →
+   `flux push artifact --path=/tmp/artifact --output json` → capture digest →
+   `cosign sign --yes $DIGEST_URL` (keyless, GHA OIDC).
+3. Flux `clusters/dev` — `OCIRepository` verifies digest via
+   `verify.matchOIDCIdentity` (not `secretRef`) + `Kustomization` decrypts
+   (SOPS `sops-age`) + reconciles `path: "./"`.
 4. Promotion — repin `OCIRepository.spec.ref.tag`; no rebuild.
 5. `certification-e2e/run.sh` — gate on canonical flow + plane independence
    + OpenMeter isolation.

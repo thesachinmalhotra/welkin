@@ -1,8 +1,8 @@
 # Session Handoff
 
 ## STATE
-Welkin platform defined as a single Timoni bundle + gitless signed/encrypted
-delivery. Local gates (gate-2/gate-3 docker-compose) already existed with
+Welkin platform defined as a single Timoni bundle + keyless signed/encrypted
+Flux delivery. Local gates (gate-2/gate-3 docker-compose) already existed with
 recorded e2e evidence. This session built the platform source, the delivery
 pipeline, the certification gate, and ran a ponytail-audit cleanup.
 
@@ -18,10 +18,12 @@ isolation). NOT yet run — no cluster has reconciled the bundle.
 - `timoni bundle lint` + `timoni bundle build` pass (9/9 instances valid).
 - No real secret renders inline in the bundle (grep-verified); creds injected
   via `envFrom`/`existingSecret` from SOPS-encrypted Secrets generated at CI.
-- Two commits this session: `223877d` (platform+delivery), `2ddc698` (audit
-  cleanup: deleted `cloudevents.cue`, `image-automation.yaml`, 2 redundant
-  Kyverno policies). Both pushed to `origin/gate-2-gate-3-clean`.
-- ponytail-audit is the agreed over-engineering check; ran once, cuts applied.
+- Delivery is keyless: `flux push artifact --output json` → digest → `cosign sign`
+  (GHA OIDC); Flux verifies via `OCIRepository.spec.verify.matchOIDCIdentity`
+  (not `secretRef: cosign-public-key`). Only SOPS age key remains pre-shared.
+- Artifact shape is Flux-native:
+  `/tmp/artifact/{welkin.yaml,welkin-secrets.yaml,kustomization.yaml}` with
+  `path: "./"` (validated locally via `kubectl kustomize`); not a single-file push.
 
 ## EVIDENCE
 - `timoni bundle lint` output: bundle valid.
@@ -37,11 +39,13 @@ isolation). NOT yet run — no cluster has reconciled the bundle.
 - Canonical contract now lives ONLY in the collector's inline `json_schema`.
 
 ## COMMIT/PR
-Branch `gate-2-gate-3-clean`, pushed. No PR opened (user controls merge).
+Branch `gate-2-gate-3-clean` (1 commit ahead of origin `c6d6a2b` in audit; latest
+HEAD contains the keyless fix). Not yet pushed — awaiting artifact validation.
 
 ## TESTS/CI/E2E
 - `build.yaml` CI not yet exercised (needs repo secrets: OPENMETER_API_KEY,
-  STRIPE_API_KEY, ARCHIVE_S3_*, COSIGN_PRIVATE_KEY, GITHUB_TOKEN).
+  STRIPE_API_KEY, ARCHIVE_S3_*; cosign is keyless — no `COSIGN_PRIVATE_KEY`;
+  `GITHUB_TOKEN` + `id-token: write` + `packages: write` supplied by Actions).
 - `certification-e2e/run.sh` written but unrun (no cluster).
 
 ## ADVERSARIAL RESULT
@@ -54,11 +58,9 @@ ACL wiring) are schema-valid but runtime-unproven.
 - No dangling references to deleted `cloudevents.cue` (grep clean).
 
 ## OPEN QUESTIONS
-- Real artifact registry/owner: `oci://ghcr.io/OWNER/welkin-manifests` is a
-  placeholder in `clusters/dev/ocirepo.yaml` + `build.yaml` — needs the real
-  `OWNER`.
-- `clusters/dev/secrets.yaml` + `.sops.yaml` carry `REPLACE_WITH_*` placeholders
-  for cosign pub / age key — must be filled before any build/sign.
+- `.sops.yaml` + `clusters/dev/secrets.yaml` carry `REPLACE_WITH_AGE_*`
+  placeholders for the SOPS age keypair — must be filled before any build/sign
+  (see `docs/runbooks/keys.md`).
 - Promotion model: dev→prod = repin `OCIRepository.spec.ref.tag`; staging/prod
   cluster dirs not yet created.
 
