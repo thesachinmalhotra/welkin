@@ -109,6 +109,17 @@ End-to-end procedure executed; all three planes proven:
   **second** object `events/1-1787993880551629220.parquet` (2.2 KiB) appeared. The
   Archive Plane caught up from Kafka after death; failure was NOT shared with Economic.
 
+### Phase 2 parity — one ID across all three planes (run `2026-08-30`)
+**Test ID `parity-verify-1`** (`customer=cust-parity, op=PUT, route=/v1/parity, duration_ms=73`).
+Canonical CloudEvent `{id, specversion, type, source, subject, time, data{duration_ms,method,route}}`
+read back from **OpenMeter** (`GET /api/v1/events`)**, Kafka (`welkin_canonical`)**, and **Parquet**
+opaque row — **identical** in all three (only serialization precision differs: OpenMeter seconds,
+Parquet microsecond, Kafka nanosecond `time`).
+
+**Duplicate result:** re-posted the same explicit ID. **OpenMeter dedupes by ID** (still 1 entry, total
+unchanged) while **Kafka + Archive preserve the replay** (2nd copy, 2nd Parquet). Economic = dedup
+semantics; Archive = history semantics — same canonical event, per-plane consumption.
+
 ### Runbook fixes discovered during this run (already applied above)
 1. `mc` is not on the host — run dockerized:
    `docker run --rm --network host -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 minio/mc …`
