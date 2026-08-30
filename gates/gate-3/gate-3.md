@@ -120,6 +120,12 @@ Parquet microsecond, Kafka nanosecond `time`).
 unchanged) while **Kafka + Archive preserve the replay** (2nd copy, 2nd Parquet). Economic = dedup
 semantics; Archive = history semantics — same canonical event, per-plane consumption.
 
+**Reverse failure (decoupling rule 3, both directions now verified):** stopped `openmeter` (Economic
+sink down, HTTP `000`). Seeded `rev-outage-1`/`rev-outage-2` — Collector returned `204`, published to
+Kafka (offset 10→12), archived a new Parquet (`08:10:24`, rows `rev-outage-1`/`rev-outage-2`).
+Archive proceeded independently of Economic. After `openmeter` restart (healthy) it caught up —
+both events delivered/counted, each exactly once. **Economic death does not stop Archive.**
+
 ### Runbook fixes discovered during this run (already applied above)
 1. `mc` is not on the host — run dockerized:
    `docker run --rm --network host -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 minio/mc …`
