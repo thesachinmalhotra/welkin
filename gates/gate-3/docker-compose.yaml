@@ -2,8 +2,8 @@
 #
 # Composes the upstream OpenMeter quickstart stack and ADDS the Archive Plane:
 #
-#   Broker (Kafka: om_default_events, canonical CloudEvents)
-#     -> drop_on (independent Redpanda Connect pipeline)
+#   Broker (Kafka: welkin_canonical, canonical CloudEvents; Collector fan-out)
+#     -> Archive (independent Redpanda Connect pipeline)
 #     -> Object Storage (MinIO, S3-compatible)
 #     -> Parquet
 #
