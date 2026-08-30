@@ -13,7 +13,7 @@
 # gates/gate-3/archive/archive.yaml. No custom code.
 #
 # Usage:
-#   OPENMETER_REPO=/home/sachin/projects/personal/openmeter \
+#   OPENMETER_REPO=../openmeter \
 #     docker compose -f gates/gate-3/docker-compose.yaml up -d
 
 include:

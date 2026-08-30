@@ -1,6 +1,11 @@
 keys/
 *.key
+*.pem
+*.p12
 cosign.key
 cosign.pub
 age.pub
+.env
+.env.*
+!.env.example
 /tmp/

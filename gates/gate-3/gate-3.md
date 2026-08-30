@@ -59,7 +59,7 @@ Economic processing, and vice versa. Proven by the decoupling check below.
 
 ## Verification procedure (zero code — upstream CLIs only)
 ```bash
-OPENMETER_REPO=/home/sachin/projects/personal/openmeter \
+OPENMETER_REPO=../openmeter \
   docker compose -f gates/gate-3/docker-compose.yaml up -d
 sleep 15   # let kafka/openmeter become ready before topic creation
 docker compose -f gates/gate-3/docker-compose.yaml exec -e JMX_PORT= -e KAFKA_JMX_OPTS= kafka \

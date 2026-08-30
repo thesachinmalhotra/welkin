@@ -116,7 +116,7 @@ git commit -m "fix(archive): consume welkin_canonical published by Collector (po
 Replace the `include:` block in `gates/gate-3/docker-compose.yaml`:
 ```yaml
 include:
-  - ${OPENMETER_REPO:-/home/sachin/projects/personal/openmeter}/quickstart/docker-compose.yaml
+  - ${OPENMETER_REPO:-../openmeter}/quickstart/docker-compose.yaml
 ```
 with:
 ```yaml
@@ -127,7 +127,7 @@ include:
 
 - [ ] **Step 2: Confirm compose parses**
 
-Run: `OPENMETER_REPO=/home/sachin/projects/personal/openmeter docker compose -f gates/gate-3/docker-compose.yaml config >/dev/null && echo OK`
+Run: `OPENMETER_REPO=../openmeter docker compose -f gates/gate-3/docker-compose.yaml config >/dev/null && echo OK`
 Expected: `OK` (no merge/parse error).
 
 - [ ] **Step 3: Commit**
@@ -169,7 +169,7 @@ Expected: no `verify.py`, `seeder.yaml`, `config.yaml`, `run.py`, `.evidence.jso
 - [ ] **Step 1: Bring up the stack**
 
 ```bash
-OPENMETER_REPO=/home/sachin/projects/personal/openmeter docker compose -f gates/gate-3/docker-compose.yaml up -d
+OPENMETER_REPO=../openmeter docker compose -f gates/gate-3/docker-compose.yaml up -d
 ```
 
 - [ ] **Step 2: Create our topic (upstream CLI)**
