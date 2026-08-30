@@ -14,6 +14,12 @@ via `certification-e2e/run.sh`. Prereq: key/secret wiring + flux bootstrap.
 `certification-e2e/run.sh` (canonical flow + plane independence + OpenMeter
 isolation). NOT yet run — no cluster has reconciled the bundle.
 
+## MILESTONE
+Local architecture gates VERIFIED. Delivery artifact validated locally via
+`kubectl kustomize`. Keyless OCI signing path prepared (GHA OIDC,
+`matchOIDCIdentity`). Clean-cluster reconciliation remains the next
+unverified boundary.
+
 ## FACTS
 - `timoni bundle lint` + `timoni bundle build` pass (9/9 instances valid).
 - No real secret renders inline in the bundle (grep-verified); creds injected
