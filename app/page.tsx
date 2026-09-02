@@ -1,40 +1,90 @@
 'use client'
 
-import { useState } from 'react'
-import { ArrowUpRight, Box, Check, ChevronRight, Command, GitBranch, Layers3, Menu, Search, ShieldCheck, Sparkles, Workflow } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  ArrowUpRight,
+  Box,
+  ChevronRight,
+  Command,
+  GitBranch,
+  Layers3,
+  Menu,
+  Search,
+  ShieldCheck,
+  Workflow,
+  X,
+} from 'lucide-react'
 
-const nodes = [
-  { icon: GitBranch, label: 'Any producer', detail: 'Stripe · HTTP · Kafka', tone: 'muted' },
-  { icon: Workflow, label: 'OpenMeter Collector', detail: 'The only normalization boundary', tone: 'blue' },
-  { icon: Box, label: 'Canonical CloudEvent', detail: 'The platform contract', tone: 'violet' },
+const navItems = ['Overview', 'Architecture', 'Evidence']
+
+const pipeline = [
+  { icon: GitBranch, eyebrow: 'Input', title: 'Any producer', detail: 'Stripe, HTTP, Kafka' },
+  { icon: Workflow, eyebrow: 'Boundary', title: 'OpenMeter Collector', detail: 'Normalize once' },
+  { icon: Box, eyebrow: 'Contract', title: 'Canonical CloudEvent', detail: 'The platform event' },
 ]
+
+function Mark() {
+  return <span className="mark" aria-hidden="true"><span /><span /><span /></span>
+}
 
 export default function Home() {
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [mobileNav, setMobileNav] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+      if (event.key === 'Escape') setPaletteOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  const goTo = (id: string) => {
+    setPaletteOpen(false)
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-8">
-            <a href="#top" className="flex items-center gap-2 font-mono text-sm font-semibold tracking-tight"><span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground"><Sparkles className="size-3.5" /></span>welkin</a>
-            <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex"><a href="#architecture" className="transition-colors hover:text-foreground">Architecture</a><a href="#planes" className="transition-colors hover:text-foreground">Planes</a><a href="#status" className="transition-colors hover:text-foreground">Status</a></nav>
-          </div>
-          <div className="flex items-center gap-2"><button onClick={() => setPaletteOpen(true)} className="hidden items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground sm:flex" aria-label="Open command palette"><Command className="size-3.5" /><span>Search</span><kbd className="ml-3 rounded border border-border px-1.5 py-0.5 font-mono text-[10px]">⌘ K</kbd></button><button className="rounded-md p-2 text-muted-foreground hover:bg-card hover:text-foreground md:hidden" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation"><Menu className="size-4" /></button><a href="#status" className="hidden rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 sm:block">View progress</a></div>
+    <main id="top" className="site-shell">
+      <header className="site-header">
+        <a className="brand" href="#top" aria-label="Welkin home"><Mark /><span>welkin</span></a>
+        <nav className="desktop-nav" aria-label="Primary navigation">
+          {navItems.map((item, index) => <a key={item} href={`#${['top', 'architecture', 'evidence'][index]}`}>{item}</a>)}
+        </nav>
+        <div className="header-actions">
+          <button className="search-trigger" onClick={() => setPaletteOpen(true)} aria-label="Open command menu"><Search data-icon="inline-start" /><span>Search</span><kbd>⌘ K</kbd></button>
+          <button className="menu-trigger" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle navigation">{mobileOpen ? <X /> : <Menu />}</button>
+          <a className="header-link" href="#evidence">Read the brief <ArrowUpRight data-icon="inline-end" /></a>
         </div>
-        {mobileNav && <nav className="flex flex-col gap-1 border-t border-border px-4 py-3 text-sm text-muted-foreground md:hidden"><a href="#architecture" className="rounded px-2 py-2 hover:bg-card">Architecture</a><a href="#planes" className="rounded px-2 py-2 hover:bg-card">Planes</a><a href="#status" className="rounded px-2 py-2 hover:bg-card">Status</a></nav>}
       </header>
 
-      <section id="top" className="relative overflow-hidden border-b border-border"><div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,oklch(0.33_0.08_250_/_0.22),transparent_58%)]" /><div className="relative mx-auto max-w-7xl px-4 pb-20 pt-20 sm:px-6 sm:pb-28 sm:pt-28 lg:px-8"><div className="max-w-3xl"><div className="mb-7 flex items-center gap-2 text-xs font-medium text-blue-300"><span className="size-1.5 rounded-full bg-blue-400" /> Architecture in progress <span className="text-muted-foreground">·</span> Gate 1 partial</div><h1 className="max-w-3xl text-balance font-mono text-4xl font-medium leading-[1.08] tracking-[-0.06em] text-foreground sm:text-6xl lg:text-7xl">The control plane for economic events.</h1><p className="mt-7 max-w-xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg">Welkin composes producers, canonical events, billing, and archival into one clear operating model. No translation after the boundary. No shared failure fate.</p><div className="mt-9 flex flex-wrap items-center gap-3"><button onClick={() => setPaletteOpen(true)} className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"><Command className="size-4" /> Explore Welkin <kbd className="ml-2 border-l border-primary-foreground/30 pl-2 font-mono text-xs">⌘ K</kbd></button><a href="#architecture" className="inline-flex items-center gap-1.5 rounded-md border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-card">See the model <ArrowUpRight className="size-4" /></a></div></div></div></section>
+      {mobileOpen && <nav className="mobile-nav" aria-label="Mobile navigation">{navItems.map((item, index) => <a key={item} href={`#${['top', 'architecture', 'evidence'][index]}`} onClick={() => setMobileOpen(false)}>{item}<ChevronRight /></a>)}</nav>}
 
-      <section id="architecture" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:px-8"><div className="mb-10 flex items-end justify-between gap-6"><div><p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">01 / The model</p><h2 className="mt-3 font-mono text-2xl tracking-tight sm:text-3xl">One event. Two independent planes.</h2></div><span className="hidden text-right font-mono text-xs text-muted-foreground sm:block">CANONICAL FLOW<br /><span className="text-foreground">v0.1 / proposed</span></span></div><div className="grid gap-3 lg:grid-cols-[1.1fr_1.5fr_1.1fr]">{nodes.map((node, index) => { const Icon = node.icon; return <div key={node.label} className="flex items-center gap-4 rounded-lg border border-border bg-card/60 p-5"><div className={`grid size-10 shrink-0 place-items-center rounded-md border ${node.tone === 'blue' ? 'border-blue-400/30 bg-blue-400/10 text-blue-300' : node.tone === 'violet' ? 'border-violet-400/30 bg-violet-400/10 text-violet-300' : 'border-border bg-background text-muted-foreground'}`}><Icon className="size-4" /></div><div><h3 className="text-sm font-medium">{node.label}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{node.detail}</p></div>{index < 2 && <ChevronRight className="ml-auto hidden size-4 text-muted-foreground lg:block" />}</div> })}</div><div className="my-3 hidden justify-center lg:flex"><div className="h-8 w-px bg-border" /></div><div className="grid gap-3 md:grid-cols-2"><div id="planes" className="rounded-lg border border-border bg-card/40 p-6"><div className="mb-8 flex items-center justify-between"><div className="flex items-center gap-2"><Layers3 className="size-4 text-blue-300" /><h3 className="text-sm font-medium">Economic Plane</h3></div><span className="rounded-full border border-blue-400/20 bg-blue-400/10 px-2 py-1 font-mono text-[10px] text-blue-300">independent</span></div><p className="max-w-sm text-sm leading-6 text-muted-foreground">OpenMeter routes usage into native Stripe integration and invoice. The economic path stays focused.</p><div className="mt-8 flex items-center gap-2 font-mono text-xs text-muted-foreground"><Check className="size-3 text-blue-300" /> usage → meter → invoice</div></div><div className="rounded-lg border border-border bg-card/40 p-6"><div className="mb-8 flex items-center justify-between"><div className="flex items-center gap-2"><Layers3 className="size-4 text-violet-300" /><h3 className="text-sm font-medium">Archive Plane</h3></div><span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-2 py-1 font-mono text-[10px] text-violet-300">independent</span></div><p className="max-w-sm text-sm leading-6 text-muted-foreground">Broker and drop_on route canonical events into object storage and Parquet without blocking economics.</p><div className="mt-8 flex items-center gap-2 font-mono text-xs text-muted-foreground"><Check className="size-3 text-violet-300" /> event → broker → parquet</div></div></div></section>
+      <section className="hero">
+        <div className="eyebrow"><span className="status-dot" /> Architecture in progress <span className="eyebrow-divider">/</span> Gate 1 partial</div>
+        <h1>The control plane<br />for economic events.</h1>
+        <p className="hero-copy">Welkin is the configuration and composition layer for event-driven economic processing and archival.</p>
+        <div className="hero-actions"><button className="primary-button" onClick={() => setPaletteOpen(true)}><Command data-icon="inline-start" /> Explore Welkin <kbd>⌘ K</kbd></button><a className="text-button" href="#architecture">See the architecture <ArrowUpRight data-icon="inline-end" /></a></div>
+        <div className="hero-meta"><span>OPEN SOURCE ARCHITECTURE</span><span>V0.1 / PROPOSED</span></div>
+      </section>
 
-      <section id="status" className="border-y border-border bg-card/20"><div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[1fr_1.4fr] lg:px-8 lg:py-20"><div><p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">02 / Current state</p><h2 className="mt-3 max-w-md font-mono text-2xl tracking-tight sm:text-3xl">A quiet surface for a serious system.</h2><p className="mt-5 max-w-md text-sm leading-6 text-muted-foreground">This is an early product surface while the architecture is being completed. It exposes the shape of Welkin without inventing runtime evidence.</p></div><div className="divide-y divide-border rounded-lg border border-border bg-background"><div className="flex items-center justify-between gap-4 p-5"><div><p className="text-sm font-medium">Gate 1 · Architecture</p><p className="mt-1 text-xs text-muted-foreground">Boundary and operating model documented</p></div><span className="rounded-full bg-amber-400/10 px-2 py-1 font-mono text-[10px] text-amber-300">partial</span></div><div className="flex items-center justify-between gap-4 p-5"><div><p className="text-sm font-medium">Gate 2 · Runtime evidence</p><p className="mt-1 text-xs text-muted-foreground">Next production-readiness objective</p></div><span className="rounded-full bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">next</span></div><div className="flex items-center justify-between gap-4 p-5"><div className="flex items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" /><p className="text-sm font-medium">No fabricated metrics</p></div><span className="font-mono text-[10px] text-muted-foreground">by design</span></div></div></div></section>
+      <section id="architecture" className="architecture section-rule">
+        <div className="section-heading"><div><div className="section-index">01</div><h2>One event.<br />Two independent planes.</h2></div><p>Canonicalize once at the<br />Collector boundary.</p></div>
+        <div className="pipeline" aria-label="Welkin event pipeline">
+          {pipeline.map((item, index) => { const Icon = item.icon; return <div className="pipeline-step" key={item.title}><div className="pipeline-card"><div className="icon-box"><Icon /></div><div><div className="card-eyebrow">{item.eyebrow}</div><h3>{item.title}</h3><p>{item.detail}</p></div></div>{index < pipeline.length - 1 && <ChevronRight className="pipeline-arrow" />}</div> })}
+        </div>
+        <div className="planes"><article className="plane-card economic"><div className="plane-top"><span className="plane-icon"><Layers3 /></span><span>Economic Plane</span><span className="plane-state">independent</span></div><h3>Usage becomes revenue.</h3><p>OpenMeter receives the canonical event and maps it to native Stripe billing. Archive failures never interrupt this path.</p><a href="#evidence">Explore the plane <ArrowUpRight data-icon="inline-end" /></a></article><article className="plane-card archive"><div className="plane-top"><span className="plane-icon"><Box /></span><span>Archive Plane</span><span className="plane-state">independent</span></div><h3>Every event remains queryable.</h3><p>The broker routes the same event to object storage, where it becomes durable Parquet without touching economic processing.</p><a href="#evidence">Explore the plane <ArrowUpRight data-icon="inline-end" /></a></article></div>
+      </section>
 
-      <footer className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-8 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span className="font-mono">welkin / event-driven economic processing</span><span>Architecture first. Evidence always.</span></footer>
+      <section id="evidence" className="evidence section-rule"><div className="section-heading"><div><div className="section-index">02</div><h2>Built in public.<br />Evidence over theatre.</h2></div><p>What is known, what is next,<br />and nothing invented.</p></div><div className="evidence-list"><div className="evidence-row"><div><span className="row-kicker">Gate 1</span><h3>Architecture and operating model</h3><p>Boundary, planes, and canonical contract documented.</p></div><span className="badge partial">Partial</span></div><div className="evidence-row"><div><span className="row-kicker">Gate 2</span><h3>Runtime evidence</h3><p>Ingestion, billing, and archive paths verified end to end.</p></div><span className="badge next">Next</span></div><div className="evidence-row"><div><span className="row-kicker">Principle</span><h3>No fabricated metrics</h3><p>Welkin only surfaces evidence the system has actually produced.</p></div><ShieldCheck className="row-check" /></div></div></section>
 
-      {paletteOpen && <div className="fixed inset-0 z-50 grid place-items-start bg-background/70 p-4 pt-[15vh] backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Command palette" onClick={() => setPaletteOpen(false)}><div className="mx-auto w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-2xl" onClick={event => event.stopPropagation()}><div className="flex items-center gap-3 border-b border-border px-4 py-3"><Search className="size-4 text-muted-foreground" /><input autoFocus placeholder="Search Welkin" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" /><kbd className="font-mono text-[10px] text-muted-foreground">ESC</kbd></div><div className="p-2"><button onClick={() => { setPaletteOpen(false); document.getElementById('architecture')?.scrollIntoView({ behavior: 'smooth' }) }} className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm hover:bg-muted"><Workflow className="size-4 text-blue-300" /> Explore canonical flow <ArrowUpRight className="ml-auto size-3 text-muted-foreground" /></button><button onClick={() => { setPaletteOpen(false); document.getElementById('status')?.scrollIntoView({ behavior: 'smooth' }) }} className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm hover:bg-muted"><ShieldCheck className="size-4 text-muted-foreground" /> Open architecture status <ArrowUpRight className="ml-auto size-3 text-muted-foreground" /></button></div></div></div>}
+      <footer className="site-footer"><a className="brand" href="#top"><Mark /><span>welkin</span></a><span>Architecture first. Evidence always.</span></footer>
+
+      {paletteOpen && <div className="palette-backdrop" role="dialog" aria-modal="true" aria-label="Welkin command menu" onClick={() => setPaletteOpen(false)}><div className="palette" onClick={event => event.stopPropagation()}><div className="palette-search"><Search /><input autoFocus placeholder="Search or jump to..." /><kbd>ESC</kbd></div><div className="palette-label">QUICK ACTIONS</div><button onClick={() => goTo('architecture')}><Workflow /><span><strong>Explore canonical flow</strong><small>View Welkin&apos;s event model</small></span><kbd>↵</kbd></button><button onClick={() => goTo('evidence')}><ShieldCheck /><span><strong>Open architecture status</strong><small>Review current evidence</small></span><kbd>↵</kbd></button></div></div>}
     </main>
   )
 }
