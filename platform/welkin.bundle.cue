@@ -382,9 +382,10 @@ collectorValues: {
 				}
 			}
 
-			// Fan-out to economic + archive via broker.
-			// Each output is wrapped with drop_on so failures are independent —
-			// Kafka back-pressure never blocks OpenMeter and vice-versa.
+			// Fan-out to both planes. No drop_on — Kafka failure backpressures
+			// the collector and retries; the record stays buffered until the
+			// archive handoff is durable. OpenMeter may process the current
+			// message, but subsequent ingestion stalls until Kafka recovers.
 			output: {
 				label: "collector"
 				broker: {
@@ -432,36 +433,30 @@ collectorValues: {
 						},
 						{
 							label: "welkin_canonical"
-							drop_on: {
-								error:         true
-								back_pressure: "10s"
-								output: {
-									// DECISION B — Archive plane consumes welkin_canonical
-									// (Strimzi, welkin-system). OpenMeter has NO ACL to this
-									// topic. TLS client cert issued by Strimzi User Operator,
-									// mounted at /etc/kafka/tls.
-									kafka_franz: {
-										seed_brokers: [runtime.kafka.bootstrap]
-										topic:        runtime.kafka.topic
-										tls: {
-											enabled:          true
-											root_cas_file:    "/etc/kafka/tls/ca.crt"
-											client_certs_file: "/etc/kafka/tls/user.crt"
-											client_key_file:   "/etc/kafka/tls/user.key"
+							// DECISION B — Archive plane consumes welkin_canonical
+							// (Strimzi, welkin-system). OpenMeter has NO ACL to this
+							// topic. TLS client cert issued by Strimzi User Operator,
+							// mounted at /etc/kafka/tls.
+							kafka_franz: {
+								seed_brokers: [runtime.kafka.bootstrap]
+								topic:        runtime.kafka.topic
+								tls: {
+									enabled:          true
+									root_cas_file:    "/etc/kafka/tls/ca.crt"
+									client_certs_file: "/etc/kafka/tls/user.crt"
+									client_key_file:   "/etc/kafka/tls/user.key"
+								}
+								metadata_max_age: "1m"
+								batching: {
+									count:  100
+									period: "1s"
+									processors: [{
+										metric: {
+											type:  "counter"
+											name:  "welkin_canonical_events_produced"
+											value: "1"
 										}
-										metadata_max_age: "1m"
-										batching: {
-											count:  100
-											period: "1s"
-											processors: [{
-												metric: {
-													type:  "counter"
-													name:  "welkin_canonical_events_produced"
-													value: "1"
-												}
-											}]
-										}
-									}
+									}]
 								}
 							}
 						},
@@ -561,45 +556,40 @@ archiveValues: {
 				]
 			}
 
-			// Archive failure must never propagate back to the Collector — the
-			// topic retains and the consumer retries. drop_on + back_pressure.
+			// Archive durability: no drop_on — S3 failure backpressures and
+			// retries via Kafka consumer-group offset. The record stays in the
+			// topic until the object is durably persisted.
 			output: {
-				drop_on: {
-					error:         true
-					back_pressure: "10s"
-					output: {
-						aws_s3: {
-							bucket:                runtime.archive.bucket
-							path:                  "events/${!timestamp_unix()}-${!uuid_v4()}.parquet"
-							endpoint:              runtime.archive.endpoint
-							force_path_style_urls: runtime.archive.forcePathStyle
-							region:                runtime.archive.region
-						credentials: {
-							// Injected from the `welkin-archive-s3` Secret via envFrom.
-							id:     "${ARCHIVE_ACCESS_KEY_ID:-minio}"
-							secret: "${ARCHIVE_SECRET_ACCESS_KEY:-minio123}"
-						}
-							max_in_flight: 1
-							batching: {
-								count:  product.archive.batchCount
-								period: product.archive.batchPeriod
-								processors: [{
-									parquet_encode: {
-										schema: [
-											{name: "id",          type: "UTF8"},
-											{name: "specversion", type: "UTF8"},
-											{name: "type",        type: "UTF8"},
-											{name: "source",      type: "UTF8"},
-											{name: "time",        type: "TIMESTAMP"},
-											{name: "subject",     type: "UTF8"},
-											{name: "data",        type: "BYTE_ARRAY"},
-										]
-										default_compression:   "zstd"
-										default_timestamp_unit: "MICROSECOND"
-									}
-								}]
+				aws_s3: {
+					bucket:                runtime.archive.bucket
+					path:                  "events/${!timestamp_unix()}-${!uuid_v4()}.parquet"
+					endpoint:              runtime.archive.endpoint
+					force_path_style_urls: runtime.archive.forcePathStyle
+					region:                runtime.archive.region
+					credentials: {
+						// Injected from the `welkin-archive-s3` Secret via envFrom.
+						id:     "${ARCHIVE_ACCESS_KEY_ID:-minio}"
+						secret: "${ARCHIVE_SECRET_ACCESS_KEY:-minio123}"
+					}
+					max_in_flight: 1
+					batching: {
+						count:  product.archive.batchCount
+						period: product.archive.batchPeriod
+						processors: [{
+							parquet_encode: {
+								schema: [
+									{name: "id",          type: "UTF8"},
+									{name: "specversion", type: "UTF8"},
+									{name: "type",        type: "UTF8"},
+									{name: "source",      type: "UTF8"},
+									{name: "time",        type: "TIMESTAMP"},
+									{name: "subject",     type: "UTF8"},
+									{name: "data",        type: "BYTE_ARRAY"},
+								]
+								default_compression:   "zstd"
+								default_timestamp_unit: "MICROSECOND"
 							}
-						}
+						}]
 					}
 				}
 			}

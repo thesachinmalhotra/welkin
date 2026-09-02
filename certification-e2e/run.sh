@@ -142,6 +142,58 @@ sys.exit(1)
 PY
 }
 
+# Kafka consumer-group offset probe for the Archive plane.
+# Uses the same Strimzi Kafka image + TLS Secret as kafka_has_event.
+# GROUP is the Archive consumer; TOPIC is welkin_canonical. The helper returns
+# the raw `kafka-consumer-groups.sh --describe` table so callers can parse
+# CURRENT-OFFSET / LOG-END-OFFSET / LAG per partition and sum LAG across all
+# partitions. No production/Kafka/Collector/Archive config is changed.
+GROUP="welkin-archive"
+
+# kafka_archive_group_describe — print raw describe table for GROUP/TOPIC.
+# Output: header + one row per partition (GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG ...).
+# Returns non-zero if the group has no committed offsets yet (CONSUMER group not yet visible).
+kafka_archive_group_describe(){
+  kubectl run "e2e-group-probe-$(date +%s)" --rm -i --restart=Never --quiet \
+    --image="$STRIMZI_KAFKA_IMAGE" --namespace "$NS_WELKIN" \
+    --overrides='{
+      "spec":{
+        "containers":[{
+          "name":"probe",
+          "image":"'"$STRIMZI_KAFKA_IMAGE"'",
+          "command":["/bin/bash","-lc",
+            "cat >/tmp/client.properties <<PROPS\nsecurity.protocol=SSL\nssl.truststore.type=PEM\nssl.truststore.certificates=/etc/kafka/tls/ca.crt\nssl.keystore.type=PEM\nssl.keystore.key=/etc/kafka/tls/user.key\nssl.keystore.certificate.chain=/etc/kafka/tls/user.crt\nPROPS\nkafka-consumer-groups.sh --bootstrap-server '"$FDQN_KAFKA"' --describe --group '"$GROUP"' --command-config /tmp/client.properties 2>&1"],
+          "volumeMounts":[
+            {"name":"tls","mountPath":"/etc/kafka/tls","readOnly":true}
+          ]
+        }],
+        "serviceAccountName":"'"$(kubectl get pod -n "$NS_WELKIN" -l app.kubernetes.io/name=welkin-archive -o jsonpath='{.items[0].spec.serviceAccountName}' 2>/dev/null || echo welkin-archive)"'",
+        "volumes":[
+          {"name":"tls","secret":{"secretName":"'"$([[ -n "${KAFKA_PROBE_SECRET:-}" ]] && echo "$KAFKA_PROBE_SECRET" || echo "welkin-archive-kafka")"'"}}
+        ],
+        "restartPolicy":"Never"
+      }}' 2>/dev/null || true
+}
+
+# kafka_archive_group_lag — sum LAG across all partitions of TOPIC for GROUP.
+# Prints a single integer (0 == fully caught up). Returns 1 if describe produced no rows.
+kafka_archive_group_lag(){
+  local out
+  out=$(kafka_archive_group_describe)
+  # Filter to the canonical topic, skip header, sum column 6 (LAG). Handles "-" and empty.
+  printf '%s\n' "$out" | awk -v topic="$TOPIC" '
+    $2==topic { lag=$6; if (lag=="-" || lag=="") lag=0; sum+=lag; found=1 }
+    END { if (!found) exit 1; print sum+0 }'
+}
+
+# kafka_archive_group_offsets — emit tab-separated per-partition offsets for TOPIC.
+# Format: PARTITION<TAB>CURRENT-OFFSET<TAB>LOG-END-OFFSET<TAB>LAG  (one line per partition)
+kafka_archive_group_offsets(){
+  local out
+  out=$(kafka_archive_group_describe)
+  printf '%s\n' "$out" | awk -v topic="$TOPIC" '$2==topic { print $3"\t"$4"\t"$5"\t"$6 }'
+}
+
 # ---------------------------------------------------------------------------
 # Per-run DISTINCT event ids (avoids OpenMeter dedupe masking any result).
 # ---------------------------------------------------------------------------
