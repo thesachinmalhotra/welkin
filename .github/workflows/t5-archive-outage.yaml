@@ -1,0 +1,51 @@
+name: T5 archive outage certification
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment containing WELKIN_KUBECONFIG_B64
+        required: true
+        type: environment
+permissions:
+  contents: read
+concurrency:
+  group: welkin-t5-${{ inputs.environment }}
+  cancel-in-progress: false
+jobs:
+  t5:
+    name: T5 object-storage outage and recovery
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.WELKIN_KUBECONFIG_B64 }}
+        run: |
+          test -n "$KUBECONFIG_B64" || { echo "WELKIN_KUBECONFIG_B64 is required" >&2; exit 2; }
+          umask 077
+          mkdir -p "$RUNNER_TEMP/kube"
+          printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kube/config"
+          echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
+      - name: Install Parquet probe dependencies
+        run: python3 -m pip install --disable-pip-version-check --quiet boto3 pyarrow
+      - name: Cluster preflight
+        run: |
+          kubectl version --client
+          kubectl cluster-info
+          kubectl get namespace welkin-system
+          kubectl get deployment/minio -n welkin-system
+          kubectl get deployment/openmeter-api -n openmeter-system
+      - name: Run T5
+        env:
+          T5_ARTIFACT_DIR: ${{ runner.temp }}/welkin-t5
+        run: ./certification-e2e/t5-archive-outage.sh
+      - name: Upload T5 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: welkin-t5-${{ github.run_id }}
+          path: ${{ runner.temp }}/welkin-t5
+          if-no-files-found: warn
+          retention-days: 14
