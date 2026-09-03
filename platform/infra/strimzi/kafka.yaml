@@ -1,4 +1,7 @@
 # Welkin-owned Kafka cluster + the canonical topic.
+# T5 deliberately freezes Strimzi 0.45/Kafka 3.9 with ZooKeeper. Strimzi 0.45
+# is the last minor release supporting ZooKeeper; KRaft migration is a separate
+# post-T5 architecture change rather than part of outage certification.
 # RF=3, TLS listener on 9093 (Strimzi User Operator issues per-workload certs).
 # OpenMeter's internal Kafka is SEPARATE (its own chart subchart in
 # openmeter-system); this broker is Welkin's trust domain only.

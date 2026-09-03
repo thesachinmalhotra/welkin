@@ -15,6 +15,7 @@ jobs:
     name: T5 object-storage outage and recovery
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # T5 runtime matrix: Kubernetes 1.32.8 / Cilium 1.17.0 / Flux 2.7.5 / Strimzi 0.45.0 / Kafka 3.9.0
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -60,8 +61,12 @@ jobs:
 
       - name: Install Flux
         run: |
-          curl -fsSL https://fluxcd.io/install.sh | bash
-          flux install --components=source-controller,helm-controller,kustomize-controller,notification-controller
+          curl -fsSL -o /tmp/flux.tgz https://github.com/fluxcd/flux2/releases/download/v2.7.5/flux_2.7.5_linux_amd64.tar.gz
+          printf "%s  %s\n" "1e92141e8498289e4b27411385aeb18396053176cf297b0cb99abd6ca8293e75" /tmp/flux.tgz | sha256sum -c -
+          tar -xzf /tmp/flux.tgz -C /tmp
+          install -m 0755 /tmp/flux /usr/local/bin/flux
+          flux version --client
+          flux install --version=2.7.5 --components=source-controller,helm-controller,kustomize-controller,notification-controller
           kubectl -n flux-system wait --for=condition=Available \
             deployment/source-controller deployment/helm-controller \
             deployment/kustomize-controller deployment/notification-controller \
