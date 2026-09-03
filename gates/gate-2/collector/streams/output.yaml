@@ -1,0 +1,23 @@
+input:
+  inproc: openmeter
+
+buffer:
+  sqlite:
+    path: /var/lib/collector/buffer.sqlite
+    post_processors:
+      - split: {}
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - openmeter:
+          url: "${OPENMETER_URL:https://openmeter.cloud}"
+          token: "${OPENMETER_TOKEN:}"
+          batching:
+            count: ${BATCH_SIZE:1}
+            period: ${BATCH_PERIOD:30s}
+      - kafka:
+          addresses: ["${KAFKA_BROKERS:-kafka:9092}"]
+          topic: welkin_canonical
+          client_id: welkin-collector

@@ -1,22 +1,11 @@
-# Python
-__pycache__/
-*.py[cod]
-.ruff_cache/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Editors
-.vscode/
-.idea/
-
-# Local tooling
-.poolside/
-
-# Temporary files
-*.tmp
-*.swp
-
-# rpk test tooling (not part of Welkin; test harness only)
-rpk-linux-amd64.zip
+keys/
+*.key
+*.pem
+*.p12
+cosign.key
+cosign.pub
+age.pub
+.env
+.env.*
+!.env.example
+/tmp/

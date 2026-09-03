@@ -1,0 +1,94 @@
+# Workload isolation — the "OpenMeter is enemy" enforcement at L3/L4.
+# Kafka-protocol (topic-level) authorization is owned by Strimzi ACLs
+# (platform/infra/strimzi/kafka-users.yaml); Cilium enforces who may even
+# reach the broker / API.
+---
+# OpenMeter: untrusted tenant. Ingress ONLY from welkin-system (the Collector);
+# egress ONLY to its own Postgres + Kafka inside openmeter-system.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: openmeter-confinement
+  namespace: openmeter-system
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: welkin-system
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openmeter-system
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+        - ports:
+            - port: "9092"
+              protocol: TCP
+---
+# Collector: may reach OpenMeter API (8080) and Welkin's Kafka (9093).
+# Producers reach it on 8080 (handled by base + this ingress).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: collector-egress
+  namespace: welkin-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: openmeter-collector
+  ingress:
+    - toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openmeter-system
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: welkin-system
+            strimzi.io/cluster: welkin-kafka
+      toPorts:
+        - ports:
+            - port: "9093"
+              protocol: TCP
+---
+# Archive: consume Welkin Kafka (9093) + write archive bucket (MinIO 9000).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: archive-egress
+  namespace: welkin-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: welkin-archive
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: welkin-system
+            strimzi.io/cluster: welkin-kafka
+      toPorts:
+        - ports:
+            - port: "9093"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: welkin-system
+            app.kubernetes.io/name: minio
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP

@@ -1,0 +1,6 @@
+# SOPS config — age keypair encrypts Secret manifests at rest.
+# The age PUBLIC key lives here (committed); the private key is only on the
+# cluster (clusters/*/secrets.yaml -> sops-age). CI encrypts; Flux decrypts.
+creation_rules:
+  - encrypted_regex: "^(data|stringData)$"
+    age: "REPLACE_WITH_AGE_PUBLIC_KEY"

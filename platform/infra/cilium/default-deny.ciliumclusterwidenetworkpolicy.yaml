@@ -1,0 +1,13 @@
+# Cilium cluster-wide default-deny.
+# An EMPTY rule list denies all; a rule with `{}` would ALLOW all. So we use
+# `ingress: []` and `egress: []` to drop every flow by default. Only explicit
+# CiliumNetworkPolicy / NetworkPolicy grants (P5 + base-allow below) open
+# flows. This is the floor of the "OpenMeter is enemy" posture.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  endpointSelector: {}
+  ingress: []
+  egress: []

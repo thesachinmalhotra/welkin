@@ -1,0 +1,62 @@
+# Welkin Gate 3 composition — Archive Plane (upstream composition only).
+#
+# Composes the upstream OpenMeter quickstart stack and ADDS the Archive Plane:
+#
+#   Broker (Kafka: welkin_canonical, canonical CloudEvents; Collector fan-out)
+#     -> Archive (independent Redpanda Connect pipeline)
+#     -> Object Storage (MinIO, S3-compatible)
+#     -> Parquet
+#
+# The Archive Plane is a SEPARATE process consuming from Kafka, so its failure
+# cannot affect Economic Plane processing (AGENTS.md rule 3: planes share the
+# event, not failure fate). It is the upstream benthos-collector image running
+# gates/gate-3/archive/archive.yaml. No custom code.
+#
+# Usage:
+#   OPENMETER_REPO=../openmeter \
+#     docker compose -f gates/gate-3/docker-compose.yaml up -d
+
+include:
+  - ../gate-2/docker-compose.yaml
+
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+
+  # Archive Plane. Storage-agnostic: any S3-compatible store via ARCHIVE_* env.
+  # MinIO below is only the LOCAL test stand-in (like the OpenMeter quickstart is
+  # the local stand-in for OpenMeter). For prod set ARCHIVE_ENDPOINT/BUCKET/REGION/
+  # ACCESS_KEY/SECRET to R2 / S3 / Spaces / etc.
+  archive:
+    image: ghcr.io/openmeterio/benthos-collector:latest
+    depends_on:
+      kafka:
+        condition: service_started
+      minio:
+        condition: service_started
+    environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-welkin-archive}
+      ARCHIVE_ENDPOINT: ${ARCHIVE_ENDPOINT:-http://minio:9000}
+      ARCHIVE_FORCE_PATH_STYLE: ${ARCHIVE_FORCE_PATH_STYLE:-true}
+      ARCHIVE_REGION: ${ARCHIVE_REGION:-us-east-1}
+      ARCHIVE_ACCESS_KEY: ${ARCHIVE_ACCESS_KEY:-minioadmin}
+      ARCHIVE_SECRET_KEY: ${ARCHIVE_SECRET_KEY:-minioadmin}
+    volumes:
+      - type: bind
+        source: ./archive
+        target: /etc/archive
+        read_only: true
+    command: ["run", "/etc/archive/archive.yaml"]
+
+volumes:
+  minio_data:
