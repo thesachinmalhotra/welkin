@@ -1,7 +1,7 @@
 # Kyverno ClusterPolicies — the "OpenMeter is enemy" guardrails as code.
 # Roll out Audit -> Enforce per policy (start Audit, watch PolicyReports,
 # then flip validationFailureAction to Enforce).
-# Cilium already enforces default-deny at L3/L4 cluster-wide, so Kyverno here
+# Cilium enforces workload-scoped default-deny at L3/L4, so Kyverno here
 # handles pod-level hardening + the cross-namespace secret-access guardrail.
 ---
 # 1) Force automountServiceAccountToken: false on every pod. OpenMeter (and

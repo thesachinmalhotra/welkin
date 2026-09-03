@@ -477,7 +477,8 @@ collectorValues: {
 // It is the only consumer of welkin_canonical (Welkin-owned Strimzi topic) and
 // the only writer to the archive bucket. OpenMeter never touches either.
 // Plane independence: Collector/OpenMeter failures cannot block Archive and
-// vice-versa (both sides drop_on).
+// vice-versa: Archive is decoupled after Kafka durable handoff; the Collector
+// fan_out has no drop_on on the Kafka branch, so Kafka unavailability backpressures ingestion.
 archiveValues: {
 	repository: url: "oci://ghcr.io/openmeterio/helm-charts"
 	chart: {
@@ -683,7 +684,7 @@ ciliumValues: {
 
 // Kyverno — policy-as-code admission controller (YAML-native, no Rego).
 // Enforces the "enemy" guardrails as reviewable, GitOps-synced policy:
-//   - auto-generate default-deny NetworkPolicy per namespace
+//   - workload-scoped default-deny is enforced by Cilium
 //   - force automountServiceAccountToken: false
 //   - enforce Pod Security Standards (restricted-lite)
 //   - block ClusterRoleBindings outside platform namespaces (no OpenMeter

@@ -1,4 +1,4 @@
-# Baseline allows required for any pod to function under the cluster-wide
+# Baseline allows required for pods under the workload-scoped
 # default-deny. These are NOT workload-specific — they are cluster plumbing
 # (DNS resolution, API server reachability, Cilium health). Workload
 # isolation (e.g. OpenMeter) is enforced by P5 policies on top of this floor.

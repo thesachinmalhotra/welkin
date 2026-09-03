@@ -14,52 +14,171 @@ jobs:
   t5:
     name: T5 object-storage outage and recovery
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Create ephemeral Kubernetes cluster
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
           cluster_name: welkin-t5
-          node_image: kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f
-          kubectl_version: v1.35.0
+          config: .github/kind/t5-config.yaml
+          node_image: kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1
+          kubectl_version: v1.32.8
           wait: 120s
+
+      - name: Bootstrap Cilium
+        run: |
+          helm install cilium oci://quay.io/cilium/charts/cilium \
+            --version 1.17.0 \
+            --namespace kube-system \
+            --set ipam.mode=kubernetes \
+            --set kubeProxyReplacement=true \
+            --set k8sServiceHost=kind-control-plane \
+            --set k8sServicePort=6443 \
+            --set operator.replicas=1 \
+            --set hubble.enabled=true \
+            --set hubble.relay.enabled=true \
+            --set hubble.ui.enabled=true \
+            --set encryption.enabled=true \
+            --set encryption.type=wireguard \
+            --set enableEnvoyConfig=true
+          kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=cilium --timeout=300s
+          kubectl -n kube-system rollout status deployment/cilium-operator --timeout=300s
+          kubectl -n kube-system delete daemonset kube-proxy --ignore-not-found=true
+          kubectl -n kube-system rollout status daemonset/cilium --timeout=300s
+
+      - name: Validate Cilium bootstrap
+        run: |
+          kubectl get nodes -o wide
+          kubectl -n kube-system get pods -l k8s-app=cilium
       - name: Install Timoni
         run: |
           curl -fsSL -o /tmp/timoni.tgz https://github.com/stefanprodan/timoni/releases/download/v0.34.0/timoni_0.34.0_linux_amd64.tar.gz
           tar -xzf /tmp/timoni.tgz -C /tmp
           install -m 0755 /tmp/timoni /usr/local/bin/timoni
+
       - name: Install Flux
         run: |
           curl -fsSL https://fluxcd.io/install.sh | bash
           flux install --components=source-controller,helm-controller,kustomize-controller,notification-controller
-          kubectl -n flux-system wait --for=condition=Available deployment/source-controller deployment/helm-controller deployment/kustomize-controller deployment/notification-controller --timeout=180s
+          kubectl -n flux-system wait --for=condition=Available \
+            deployment/source-controller deployment/helm-controller \
+            deployment/kustomize-controller deployment/notification-controller \
+            --timeout=180s
+
       - name: Configure T5 secrets
         run: |
           kubectl create namespace welkin-system --dry-run=client -o yaml | kubectl apply -f -
           kubectl create namespace openmeter-system --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n welkin-system create secret generic welkin-openmeter-token --from-literal=OPENMETER_API_KEY=changeme --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n openmeter-system create secret generic welkin-stripe --from-literal=STRIPE_API_KEY=sk_test_welkin_t5 --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n welkin-system create secret generic welkin-archive-s3 --from-literal=ARCHIVE_ACCESS_KEY_ID=minio --from-literal=ARCHIVE_SECRET_ACCESS_KEY=minio123 --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n welkin-system create secret generic welkin-minio --from-literal=root-user=minio --from-literal=root-password=minio123 --dry-run=client -o yaml | kubectl apply -f -
-      - name: Apply Welkin platform bundle
+          kubectl -n welkin-system create secret generic welkin-openmeter-token \
+            --from-literal=OPENMETER_API_KEY=changeme --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n openmeter-system create secret generic welkin-stripe \
+            --from-literal=STRIPE_API_KEY=sk_test_welkin_t5 --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n welkin-system create secret generic welkin-archive-s3 \
+            --from-literal=ARCHIVE_ACCESS_KEY_ID=minio \
+            --from-literal=ARCHIVE_SECRET_ACCESS_KEY=minio123 --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n welkin-system create secret generic welkin-minio \
+            --from-literal=root-user=minio --from-literal=root-password=minio123 \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Render Welkin platform bundle
         env:
           OPENMETER_API_KEY: changeme
           STRIPE_API_KEY: sk_test_welkin_t5
           ARCHIVE_ACCESS_KEY_ID: minio
           ARCHIVE_SECRET_ACCESS_KEY: minio123
-        run: timoni bundle apply -f platform/welkin.bundle.cue --timeout=20m
-      - name: Wait for T5 runtime
         run: |
-          if ! kubectl wait --for=condition=Ready pods --all -A --timeout=900s; then
-            kubectl get pods -A -o wide
-            kubectl get helmreleases -A || true
-            exit 1
-          fi
+          timoni bundle build -f platform/welkin.bundle.cue --runtime-from-env > /tmp/welkin-manifests.yaml
+          mkdir -p /tmp/welkin-artifact/foundation /tmp/welkin-artifact/infra/cilium /tmp/welkin-artifact/infra/kyverno /tmp/welkin-artifact/infra/strimzi /tmp/welkin-artifact/apps
+          cp /tmp/welkin-manifests.yaml /tmp/welkin-artifact/welkin-manifests.yaml
+          awk '
+          /^# Instance: / {
+            instance=$3
+            if (instance ~ /^(kyverno|strimzi|postgres|minio)$/) out="/tmp/welkin-artifact/foundation/welkin.yaml"
+            else if (instance == "cilium") out="/tmp/welkin-artifact/cilium.yaml"
+            else if (instance ~ /^(openmeter|collector|archive)$/) out="/tmp/welkin-artifact/apps/welkin.yaml"
+            else { print "unexpected instance " instance > "/dev/stderr"; exit 1 }
+            next
+          }
+          /^---$/ { next }
+          /^apiVersion:/ { print "---" > out; print > out; next }
+          out != "" { print > out; next }
+          NF { print "unexpected rendered line for instance " instance > "/dev/stderr"; exit 1 }
+          ' /tmp/welkin-manifests.yaml
+          rm -f /tmp/welkin-artifact/cilium.yaml
+          test "$(grep -c '^kind: HelmRelease$' /tmp/welkin-artifact/foundation/welkin.yaml)" -eq 4
+          test "$(grep -c '^kind: HelmRelease$' /tmp/welkin-artifact/apps/welkin.yaml)" -eq 3
+          cat > /tmp/welkin-artifact/foundation/kustomization.yaml <<'EOF'
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+          - welkin.yaml
+          EOF
+          cat > /tmp/welkin-artifact/infra/kustomization.yaml <<'EOF'
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+          - cilium/base-allow.ciliumclusterwidenetworkpolicy.yaml
+          - cilium/default-deny.ciliumclusterwidenetworkpolicy.yaml
+          - cilium/workload-policies.yaml
+          - kyverno/policies.yaml
+          - strimzi/kafka.yaml
+          - strimzi/kafka-users.yaml
+          EOF
+          cat > /tmp/welkin-artifact/apps/kustomization.yaml <<'EOF'
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+          - welkin.yaml
+          EOF
+          kubectl kustomize /tmp/welkin-artifact/foundation > /tmp/foundation-rendered.yaml
+          kubectl kustomize /tmp/welkin-artifact/infra > /tmp/infra-rendered.yaml
+          kubectl kustomize /tmp/welkin-artifact/apps > /tmp/apps-rendered.yaml
+
+      - name: Apply foundation
+        run: kubectl apply -k /tmp/welkin-artifact/foundation
+
+      - name: Wait for platform controllers
+        run: |
+          kubectl wait --for=condition=Ready helmrelease/strimzi -n welkin-system --timeout=600s
+          kubectl wait --for=condition=Ready helmrelease/kyverno -n kyverno --timeout=600s
+
+      - name: Install Welkin infrastructure resources
+        run: |
+          kubectl apply -k /tmp/welkin-artifact/infra
+          kubectl wait --for=condition=Ready kafka/welkin-kafka -n welkin-system --timeout=600s
+          kubectl get kafkauser -n welkin-system
+
+      - name: Apply applications
+        run: kubectl apply -k /tmp/welkin-artifact/apps
+
+      - name: Wait for application releases
+        run: |
+          kubectl wait --for=condition=Ready helmrelease/postgres -n openmeter-system --timeout=600s
+          kubectl wait --for=condition=Ready helmrelease/openmeter -n openmeter-system --timeout=600s
+          kubectl wait --for=condition=Ready helmrelease/minio -n welkin-system --timeout=600s
+          kubectl wait --for=condition=Ready helmrelease/collector -n welkin-system --timeout=600s
+          kubectl wait --for=condition=Ready helmrelease/archive -n welkin-system --timeout=600s
+
+      - name: Runtime preflight
+        run: |
+          kubectl get kafka -n welkin-system
+          kubectl get kafkauser -n welkin-system
+          kubectl get deployment/minio -n welkin-system
+          kubectl get deployment/openmeter-collector -n welkin-system
+          kubectl get deployment/welkin-archive -n welkin-system
+          kubectl get endpointslice -n welkin-system -l kubernetes.io/service-name=minio
+          kubectl get endpointslice -n welkin-system -l kubernetes.io/service-name=openmeter-collector
+
+      - name: Install Parquet probe dependencies
+        run: python3 -m pip install --disable-pip-version-check --quiet boto3 pyarrow
+
       - name: Run T5
         env:
           T5_ARTIFACT_DIR: ${{ runner.temp }}/welkin-t5
         run: ./certification-e2e/t5-archive-outage.sh
+
       - name: Upload T5 evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -68,9 +187,12 @@ jobs:
           path: ${{ runner.temp }}/welkin-t5
           if-no-files-found: warn
           retention-days: 14
+
       - name: Dump cluster diagnostics
         if: failure()
         run: |
           kubectl get pods -A -o wide || true
           kubectl get helmreleases -A || true
+          kubectl get kafka -A || true
+          kubectl get kafkauser -A || true
           kubectl get events -A --sort-by=.lastTimestamp | tail -200 || true
