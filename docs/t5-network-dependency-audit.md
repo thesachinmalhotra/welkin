@@ -118,3 +118,21 @@ ID exactly.
 
 The audit intentionally follows those upstream ownership boundaries instead of
 creating a second policy/control-plane implementation.
+
+## T5-21 through T5-25 readiness notes
+
+The remaining T5 certification mechanics are intentionally runtime-oriented. The archive probe enumerates all `events/` objects through the S3 paginator and reads only the Parquet `id` column, so certification is not silently limited to the first ListObjectsV2 page and does not deserialize unrelated payload columns. The probe uses the same archive S3 credentials and the archive network identity only where Kafka reachability is required; it does not grant additional RBAC.
+
+The T5 collector probe uses the actual ingestion Service port-forward and expects HTTP 405 to a GET on `/api/v1/events`, because the collector endpoint is POST-only. This proves the forwarded endpoint is reachable without generating a test event merely to establish port-forward readiness. The port-forward binds explicitly to loopback and is terminated on cleanup.
+
+MinIO outage confirmation requires both Deployment `spec.replicas=0` and an empty EndpointSlice. Recovery restores the original replica count, waits for MinIO health, unsuspends the HelmRelease, waits for its Ready condition, and verifies healthy endpoints again. Cleanup executes through the EXIT trap and attempts to release a test-only HelmRelease suspension even if scaling or recovery fails.
+
+**Status: T5-21 CLOSED - bounded Parquet identity scan hardened.**
+
+**Status: T5-22 CLOSED - causal-proof scope explicit; no direct negative object-store query is claimed.**
+
+**Status: T5-23 CLOSED - collector port-forward lifecycle/readiness hardened. Runtime: UNVERIFIED.**
+
+**Status: T5-24 CLOSED - outage injection mechanism hardened and confirmation requires zero replicas plus zero endpoints. Runtime: UNVERIFIED.**
+
+**Status: T5-25 CLOSED - recovery and cleanup hardened with post-unsuspend readiness verification. Runtime: UNVERIFIED.**
