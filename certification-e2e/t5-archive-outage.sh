@@ -12,8 +12,28 @@ T5_ARTIFACT_DIR="${T5_ARTIFACT_DIR:-${RUNNER_TEMP:-/tmp}/welkin-t5}"
 mkdir -p "$T5_ARTIFACT_DIR"
 RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 pass(){ echo "PASS: $1"; PASS=$((PASS+1)); }; fail(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }; unverified(){ echo "UNVERIFIED: $1"; UNVERIFIED=$((UNVERIFIED+1)); }
-minio_up(){ kubectl run "t5-minio-$RANDOM" --rm -i --restart=Never --quiet --image="$MINIO_PROBE_IMAGE" -n "$NS_WELKIN" --command -- curl -fsS --connect-timeout 3 --max-time 6 "http://minio.${NS_WELKIN}.svc:9000/minio/health/live" >/dev/null 2>&1; }
-minio_down(){ ! minio_up; }
+minio_probe(){
+  local out
+  local url="http://minio.${NS_WELKIN}.svc:9000/minio/health/live"
+  if ! out=$(kubectl run "t5-minio-$RANDOM" --rm -i --restart=Never --quiet --image="$MINIO_PROBE_IMAGE" -n "$NS_WELKIN" --command --     sh -ec 'if curl -fsS --connect-timeout 3 --max-time 6 "$1" >/dev/null; then echo UP; else echo DOWN; fi'     sh "$url"); then
+    return 2
+  fi
+  case "$out" in
+    *UP*) return 0 ;;
+    *DOWN*) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+minio_up(){ minio_probe; }
+minio_down(){
+  local rc
+  minio_probe; rc=$?
+  case "$rc" in
+    1) return 0 ;;
+    0) return 1 ;;
+    *) return "$rc" ;;
+  esac
+}
 lag_positive(){ local x; x=$(kafka_archive_group_lag) && [[ "$x" -gt 0 ]]; }
 caught_up(){ local x; x=$(kafka_archive_group_lag) && [[ "$x" -eq 0 ]]; }
 archive_has_event(){
@@ -34,8 +54,28 @@ PY
 }
 MINIO_REPLICAS=$(kubectl get deployment/minio -n "$NS_WELKIN" -o jsonpath='{.spec.replicas}')
 failure_injection_method=kubernetes-deployment-scale-to-zero
-restore(){ kubectl scale deployment/minio -n "$NS_WELKIN" --replicas="$MINIO_REPLICAS" >/dev/null 2>&1 || true; }
-trap restore EXIT
+MINIO_OUTAGE_ACTIVE=0
+
+restore_minio(){
+  [[ "$MINIO_OUTAGE_ACTIVE" -eq 1 ]] || return 0
+  kubectl scale deployment/minio -n "$NS_WELKIN" --current-replicas=0 --replicas="$MINIO_REPLICAS" >/dev/null || return 1
+  if wait_until 90 minio_up; then
+    MINIO_OUTAGE_ACTIVE=0
+    return 0
+  fi
+  return 1
+}
+
+cleanup(){
+  local status=$?
+  trap - EXIT
+  if ! restore_minio; then
+    echo "FAIL: Object Storage cleanup did not complete" >&2
+    [[ "$status" -eq 0 ]] && status=1
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
 [[ "$MINIO_REPLICAS" =~ ^[1-9][0-9]*$ ]] || { unverified "MinIO replica count is not positive"; exit 2; }
 minio_up || { unverified "Object Storage is not healthy"; exit 2; }
 kafka_archive_group_lag >/dev/null || { unverified "T4 consumer-group probe unavailable"; exit 2; }
@@ -49,7 +89,8 @@ wait_until 60 kafka_has_event "$EVENT_ID" || { fail "event not retained in Kafka
 wait_until 60 openmeter_has_event "$EVENT_ID" || { fail "event not in Economic plane"; exit 1; }
 pass "baseline event reached Kafka and Economic plane"
 STORAGE_OUTAGE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-kubectl scale deployment/minio -n "$NS_WELKIN" --replicas=0 >/dev/null
+kubectl scale deployment/minio -n "$NS_WELKIN" --current-replicas="$MINIO_REPLICAS" --replicas=0 >/dev/null
+MINIO_OUTAGE_ACTIVE=1
 wait_until 30 minio_down || { fail "storage outage not established"; exit 1; }
 pass "Object Storage unavailable"
 OUTAGE_STORAGE_CONFIRMED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -63,8 +104,7 @@ wait_until 30 lag_positive || { fail "Archive lag did not increase"; exit 1; }
 wait_until 30 openmeter_has_event "$EVENT_ID_OUTAGE" || { fail "Economic plane failed during storage outage"; exit 1; }
 LAG_DURING=$(kafka_archive_group_lag) || { fail "Unable to capture Archive lag during outage"; exit 1; }
 pass "Kafka retained event, Archive lagged, Economic plane stayed functional"
-restore
-wait_until 90 minio_up || { fail "Object Storage did not recover"; exit 1; }
+restore_minio || { fail "Object Storage did not recover"; exit 1; }
 STORAGE_RECOVERED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 wait_until 120 archive_has_event "$EVENT_ID_OUTAGE" || { fail "event not persisted after recovery"; exit 1; }
 wait_until 120 caught_up || { fail "Archive did not catch up"; exit 1; }
