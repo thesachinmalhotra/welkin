@@ -62,7 +62,8 @@ wait_until(){ # timeout_s cmd...
 
 # kafka_tools image run: exec the Strimzi kafka image as a one-shot consumer.
 # Consumes the FULL topic and greps for $1 (the specific event id). Returns 0
-# if found. Proves "the specific event reached welkin_canonical", not merely
+# if the canonical CloudEvent id field matches exactly. Proves "the specific
+# event reached welkin_canonical", not merely
 # that any message exists. --from-beginning with all 12 partitions; grep id.
 kafka_has_event(){ # event_id
   local id=$1
@@ -94,7 +95,7 @@ kafka_has_event(){ # event_id
         ],
         "restartPolicy":"Never"
       }}' 2>/dev/null || true)
-  printf '%s\n' "$out" | grep -qF "$id"
+  printf '%s\n' "$out" | grep -qF "\"id\":\"$id\""
 }
 
 # openmeter_has_event event_id — poll OpenMeter's raw event list for the id.
@@ -154,7 +155,10 @@ GROUP="welkin-archive"
 # Output: header + one row per partition (GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG ...).
 # Returns non-zero if the group has no committed offsets yet (CONSUMER group not yet visible).
 kafka_archive_group_describe(){
-  kubectl run "e2e-group-probe-$(date +%s)" --rm -i --restart=Never --quiet \
+  local pod="e2e-group-probe-$(date +%s)"
+  local out
+
+  if ! out=$(kubectl run "$pod" --rm -i --restart=Never --quiet \
     --image="$STRIMZI_KAFKA_IMAGE" --namespace "$NS_WELKIN" \
     --overrides='{
       "spec":{
@@ -172,17 +176,25 @@ kafka_archive_group_describe(){
           {"name":"tls","secret":{"secretName":"'"$([[ -n "${KAFKA_PROBE_SECRET:-}" ]] && echo "$KAFKA_PROBE_SECRET" || echo "welkin-archive-kafka")"'"}}
         ],
         "restartPolicy":"Never"
-      }}' 2>/dev/null || true
+      }}' 2>/dev/null); then
+    echo "kafka consumer-group probe command failed" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$out"
 }
 
 # kafka_archive_group_lag — sum LAG across all partitions of TOPIC for GROUP.
 # Prints a single integer (0 == fully caught up). Returns 1 if describe produced no rows.
 kafka_archive_group_lag(){
   local out
-  out=$(kafka_archive_group_describe)
-  # Filter to the canonical topic, skip header, sum column 6 (LAG). Handles "-" and empty.
+  if ! out=$(kafka_archive_group_describe); then
+    echo "kafka consumer-group lag probe failed" >&2
+    return 1
+  fi
+  # Filter to canonical-topic partition rows and sum numeric LAG values.
   printf '%s\n' "$out" | awk -v topic="$TOPIC" '
-    $2==topic { lag=$6; if (lag=="-" || lag=="") lag=0; sum+=lag; found=1 }
+    $2==topic && $3 ~ /^[0-9]+$/ && $6 ~ /^-?[0-9]+$/ { sum+=$6; found=1 }
     END { if (!found) exit 1; print sum+0 }'
 }
 
@@ -190,8 +202,11 @@ kafka_archive_group_lag(){
 # Format: PARTITION<TAB>CURRENT-OFFSET<TAB>LOG-END-OFFSET<TAB>LAG  (one line per partition)
 kafka_archive_group_offsets(){
   local out
-  out=$(kafka_archive_group_describe)
-  printf '%s\n' "$out" | awk -v topic="$TOPIC" '$2==topic { print $3"\t"$4"\t"$5"\t"$6 }'
+  if ! out=$(kafka_archive_group_describe); then
+    echo "kafka consumer-group offsets probe failed" >&2
+    return 1
+  fi
+  printf '%s\n' "$out" | awk -v topic="$TOPIC" '$2==topic && $3 ~ /^[0-9]+$/ && $6 ~ /^-?[0-9]+$/ { print $3"\t"$4"\t"$5"\t"$6 }'
 }
 
 # ---------------------------------------------------------------------------
