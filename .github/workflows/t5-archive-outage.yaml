@@ -14,7 +14,7 @@ jobs:
   t5:
     name: T5 object-storage outage and recovery
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     # T5 runtime matrix: Kubernetes 1.32.8 / Cilium 1.17.0 / Flux 2.7.5 / Strimzi 0.45.0 / Kafka 3.9.0
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -153,6 +153,9 @@ jobs:
         run: |
           kubectl apply -k /tmp/welkin-artifact/infra
           kubectl wait --for=condition=Ready kafka/welkin-kafka -n welkin-system --timeout=600s
+          kubectl wait --for=condition=Ready kafkatopic/welkin_canonical -n welkin-system --timeout=300s
+          kubectl wait --for=condition=Ready kafkauser/welkin-collector-kafka -n welkin-system --timeout=300s
+          kubectl wait --for=condition=Ready kafkauser/welkin-archive-kafka -n welkin-system --timeout=300s
           kubectl get kafkauser -n welkin-system
 
       - name: Apply applications

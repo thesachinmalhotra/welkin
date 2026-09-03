@@ -537,6 +537,9 @@ archiveValues: {
 						client_key_file:   "/etc/kafka/tls/user.key"
 					}
 					consumer_group: {
+						// T5 uses one in-flight record per partition so a storage failure cannot
+						// advance a later offset ahead of the failed archive write.
+						checkpoint_limit:      1
 						session_timeout:       "60s"
 						heartbeat_interval:    "3s"
 						rebalance_timeout:     "60s"
