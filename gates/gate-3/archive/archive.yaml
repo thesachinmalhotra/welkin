@@ -1,0 +1,42 @@
+# Welkin Archive Plane pipeline (upstream composition only). Consumes the
+# Canonical CloudEvent off `welkin_canonical` (Collector fan-out, `data` is a
+# JSON object) and writes it to object storage as Parquet. No custom code —
+# upstream kafka input + aws_s3 output with parquet_encode. The Canonical
+# CloudEvent is archived opaque (`data` BYTE_ARRAY), kept identical to the prod
+# Archive in platform/welkin.bundle.cue.
+
+http:
+  enabled: false
+
+input:
+  kafka:
+    addresses: ["${KAFKA_BROKERS:-kafka:9092}"]
+    topics: [welkin_canonical]
+    consumer_group: welkin-archive
+    start_from_oldest: false
+
+output:
+  aws_s3:
+    bucket: ${ARCHIVE_BUCKET:-welkin-archive}
+    endpoint: ${ARCHIVE_ENDPOINT:-http://minio:9000}
+    force_path_style_urls: ${ARCHIVE_FORCE_PATH_STYLE:-true}
+    region: ${ARCHIVE_REGION:-us-east-1}
+    credentials:
+      id: ${ARCHIVE_ACCESS_KEY:-minioadmin}
+      secret: ${ARCHIVE_SECRET_KEY:-minioadmin}
+    path: events/${!timestamp_unix()}-${!uuid_v4()}.parquet
+    batching:
+      count: 100
+      period: 10s
+      processors:
+        - parquet_encode:
+            schema:
+              - { name: id, type: UTF8 }
+              - { name: specversion, type: UTF8 }
+              - { name: type, type: UTF8 }
+              - { name: source, type: UTF8 }
+              - { name: time, type: TIMESTAMP }
+              - { name: subject, type: UTF8 }
+              - { name: data, type: BYTE_ARRAY }
+            default_compression: zstd
+            default_timestamp_unit: MICROSECOND

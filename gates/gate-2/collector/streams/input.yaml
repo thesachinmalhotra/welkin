@@ -1,0 +1,64 @@
+# Welkin canonicalization boundary, layered onto the upstream collector stream.
+# Raw producer POSTs JSON to :8889/api/v1/events; the first processor is the ONLY
+# place producer formats become the Canonical CloudEvent. Downstream (OpenMeter,
+# archive) never re-translates. Upstream owns ingest/validation/buffer/batch/retry.
+input:
+  http_server:
+    address: 0.0.0.0:8889
+    path: /api/v1/events
+    sync_response:
+      status: '${! meta("http_response_status").or("204") }'
+
+pipeline:
+  processors:
+    # --- Welkin-authored: raw producer -> Canonical CloudEvent ---
+    - label: "welkin_canonicalize"
+      mapping: |
+        # Producer-assigned id is preserved so OpenMeter can dedupe replays;
+        # otherwise synthesize one (each call is then a distinct event).
+        let evt_id = this.id.or(uuid_v4())
+        root = {
+          "id": $evt_id,
+          "specversion": "1.0",
+          "type": "request",
+          "source": "api-gateway",
+          "subject": this.customer,
+          "time": now(),
+          "data": {
+            "method": this.op,
+            "route": this.route,
+            "duration_ms": this.duration_ms
+          }
+        }
+
+    - label: "validation"
+      json_schema:
+        schema_path: "file:///etc/cloudevents.spec.json"
+
+    - catch:
+        - log:
+            level: ERROR
+            message: "schema validation failed: ${!error()}"
+        - mapping: |
+            meta http_response_status = "400"
+            root = {
+              "type": "about:blank",
+              "title": "Bad Request",
+              "status": 400,
+              "detail": "invalid canonical event: %s".format(error())
+            }
+        - sync_response: {}
+        - mapping: "root = deleted()"
+
+    - mapping: |
+        meta http_response_status = "204"
+    - sync_response: {}
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - sync_response: {}
+        processors:
+          - mapping: root = null
+      - inproc: openmeter

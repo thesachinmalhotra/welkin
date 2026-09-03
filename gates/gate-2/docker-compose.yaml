@@ -1,0 +1,57 @@
+# Welkin Gate 2 composition.
+# Composes (does not rebuild) the upstream OpenMeter quickstart stack and the
+# upstream collector (streams mode), adding ONLY the Welkin canonicalization
+# mapping in collector/streams/input.yaml. Upstream owns ingest/validation/
+# buffer/batch/retry; Welkin owns the mapping boundary.
+#
+# Usage:
+#   OPENMETER_REPO=../openmeter \
+#     docker compose -f gates/gate-2/docker-compose.yaml up -d
+#   python3 gates/gate-2/load/run.py --count 1000
+
+include:
+  - ${OPENMETER_REPO:-../openmeter}/quickstart/docker-compose.yaml
+
+services:
+  collector:
+    image: ghcr.io/openmeterio/benthos-collector:latest
+    ports:
+      - "127.0.0.1:4195:4195"   # management / metrics / /ready
+      - "127.0.0.1:8080:8889"   # raw producer ingest (:8889 inside) -> canonical
+    environment:
+      OPENMETER_URL: ${OPENMETER_URL:-http://openmeter:8888}
+      OPENMETER_TOKEN: ${OPENMETER_TOKEN:-}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      BATCH_SIZE: 100
+      BATCH_PERIOD: 2s
+    command:
+      - "--config"
+      - "/etc/collector/config.yaml"
+      - "--log.level"
+      - "debug"
+      - "streams"
+      - "--no-api"
+      - "/etc/collector/streams/*.yaml"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://collector:4195/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - type: volume
+        source: collector_data
+        target: /var/lib/collector
+      - type: bind
+        source: ./collector
+        target: /etc/collector
+        read_only: true
+      - type: bind
+        source: ${OPENMETER_REPO:-../openmeter}/cloudevents.spec.json
+        target: /etc/cloudevents.spec.json
+        read_only: true
+    depends_on:
+      openmeter:
+        condition: service_healthy
+
+volumes:
+  collector_data:

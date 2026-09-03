@@ -1,0 +1,133 @@
+# Build, sign, and push the Welkin platform artifact.
+#
+# Pipeline (matches docs/architecture.md):
+#   1. timoni bundle build        -> plain manifests (no secrets inline)
+#   2. generate SOPS-encrypted Secrets from CI secrets (age public key in .sops.yaml)
+#   3. flux push artifact         -> OCI artifact (signed, encrypted), digest captured
+#   4. cosign sign (keyless)      -> binds GHA OIDC identity, verified via
+#                                    matchOIDCIdentity in clusters/*/ocirepo.yaml
+#
+# Required repo secrets:
+#   OPENMETER_API_KEY, STRIPE_API_KEY,
+#   ARCHIVE_S3_ACCESS_KEY_ID, ARCHIVE_S3_SECRET_ACCESS_KEY
+# (SOPS_AGE_KEY still needs to decode secrets at apply time, but cosign is
+# keyless — no COSIGN_PRIVATE_KEY; no cosign-public-key secret on the cluster.)
+# The age PUBLIC key lives in .sops.yaml (committed); the age private key is
+# only needed by Flux at apply time (clusters/*/secrets.yaml).
+
+name: build
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  ARTIFACT: oci://ghcr.io/${{ github.repository_owner }}/welkin-manifests
+  TAG: ${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install timoni
+        run: curl -fsSL https://timoni.sh/install | sh
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Install sops
+        run: |
+          curl -fsSL -o /usr/local/bin/sops \
+            https://github.com/getsops/sops/releases/download/v3.9.1/sops-v3.9.1.linux.amd64
+          chmod +x /usr/local/bin/sops
+
+      - name: Install flux
+        run: curl -fsSL https://fluxcd.io/install.sh | bash
+
+      - name: Render platform bundle
+        run: timoni bundle build -f platform/welkin.bundle.cue > /tmp/welkin-manifests.yaml
+
+      - name: Generate SOPS-encrypted Secrets and assemble Flux artifact directory
+        env:
+          OPENMETER_API_KEY: ${{ secrets.OPENMETER_API_KEY }}
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+          ARCHIVE_S3_ACCESS_KEY_ID: ${{ secrets.ARCHIVE_S3_ACCESS_KEY_ID }}
+          ARCHIVE_S3_SECRET_ACCESS_KEY: ${{ secrets.ARCHIVE_S3_SECRET_ACCESS_KEY }}
+        run: |
+          cat > /tmp/welkin-secrets.yaml <<'EOF'
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: welkin-openmeter-token
+            namespace: welkin-system
+          type: Opaque
+          stringData:
+            OPENMETER_API_KEY: "$OPENMETER_API_KEY"
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: welkin-stripe
+            namespace: openmeter-system
+          type: Opaque
+          stringData:
+            STRIPE_API_KEY: "$STRIPE_API_KEY"
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: welkin-archive-s3
+            namespace: welkin-system
+          type: Opaque
+          stringData:
+            ARCHIVE_ACCESS_KEY_ID: "$ARCHIVE_S3_ACCESS_KEY_ID"
+            ARCHIVE_SECRET_ACCESS_KEY: "$ARCHIVE_S3_SECRET_ACCESS_KEY"
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: welkin-minio
+            namespace: welkin-system
+          type: Opaque
+          stringData:
+            root-user: "$ARCHIVE_S3_ACCESS_KEY_ID"
+            root-password: "$ARCHIVE_S3_SECRET_ACCESS_KEY"
+          EOF
+          # .sops.yaml carries the age public key -> encrypts stringData only.
+          sops --encrypt -i /tmp/welkin-secrets.yaml
+          # Flux artifact must be a directory with a kustomization.yaml so
+          # Kustomization path "./" resolves. Keep manifests and encrypted
+          # Secrets as separate files — concatenating into one welkin-full.yaml
+          # creates an extra empty document that `kustomize build` rejects.
+          mkdir -p /tmp/artifact
+          cp /tmp/welkin-manifests.yaml /tmp/artifact/welkin.yaml
+          cp /tmp/welkin-secrets.yaml /tmp/artifact/welkin-secrets.yaml
+          printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n- welkin.yaml\n- welkin-secrets.yaml\n' \
+            > /tmp/artifact/kustomization.yaml
+          # Local proof that the artifact is valid Kustomization input (requested in review).
+          kubectl kustomize /tmp/artifact > /dev/null
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+          --username ${{ github.actor }} --password-stdin
+
+      - name: Push artifact (Flux, captures immutable digest)
+        id: push
+        run: |
+          DIGEST_URL=$(flux push artifact "$ARTIFACT:$TAG" \
+            --path=/tmp/artifact \
+            --source="https://github.com/${{ github.repository }}" \
+            --revision="${{ github.ref_name }}@sha1:${{ github.sha }}" \
+            --output json | jq -r '.repository + "@" + .digest')
+          echo "digest_url=$DIGEST_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Cosign sign (keyless, by digest)
+        run: cosign sign --yes "${{ steps.push.outputs.digest_url }}"

@@ -1,0 +1,54 @@
+# Welkin-owned Kafka cluster + the canonical topic.
+# RF=3, TLS listener on 9093 (Strimzi User Operator issues per-workload certs).
+# OpenMeter's internal Kafka is SEPARATE (its own chart subchart in
+# openmeter-system); this broker is Welkin's trust domain only.
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: welkin-kafka
+  namespace: welkin-system
+  labels:
+    strimzi.io/cluster: welkin-kafka
+spec:
+  kafka:
+    version: "3.9.0"
+    replicas: 3
+    listeners:
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        authentication:
+          type: tls
+    config:
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      auto.create.topics.enable: false
+    storage:
+      type: ephemeral
+  zookeeper:
+    replicas: 3
+    storage:
+      type: ephemeral
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+---
+# The canonical event bus. Welkin-owned; OpenMeter has no ACL to it.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: welkin_canonical
+  namespace: welkin-system
+  labels:
+    strimzi.io/cluster: welkin-kafka
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: 604800000
+    cleanup.policy: "delete"

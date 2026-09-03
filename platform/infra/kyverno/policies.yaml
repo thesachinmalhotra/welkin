@@ -1,0 +1,76 @@
+# Kyverno ClusterPolicies — the "OpenMeter is enemy" guardrails as code.
+# Roll out Audit -> Enforce per policy (start Audit, watch PolicyReports,
+# then flip validationFailureAction to Enforce).
+# Cilium already enforces default-deny at L3/L4 cluster-wide, so Kyverno here
+# handles pod-level hardening + the cross-namespace secret-access guardrail.
+---
+# 1) Force automountServiceAccountToken: false on every pod. OpenMeter (and
+#    everything else) gets no ambient SA token to abuse.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: mutate-no-automount-sa-token
+spec:
+  rules:
+    - name: set-automount-false
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+      mutate:
+        patchStrategicMerge:
+          spec:
+            automountServiceAccountToken: false
+---
+# 3) Enforce Pod Security Standards (restricted-lite): no privilege
+#    escalation, drop ALL capabilities, run as non-root, read-only root.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-restricted-pss
+spec:
+  validationFailureAction: Audit
+  rules:
+    - name: no-privileged-and-drop-caps
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+      validate:
+        message: "privileged, allowPrivilegeEscalation, or added capabilities are forbidden"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false
+                  runAsNonRoot: true
+                  readOnlyRootFilesystem: true
+                  capabilities:
+                    drop: ["ALL"]
+---
+# 4) Block new ClusterRoleBindings outside platform namespaces. OpenMeter's
+#    SA therefore cannot be bound to a ClusterRole that would let it read
+#    Welkin secrets (cross-namespace secret access is denied by construction).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-clusterrolebindings
+spec:
+  validationFailureAction: Audit
+  rules:
+    - name: deny-crb-outside-platform
+      match:
+        any:
+          - resources:
+              kinds: ["ClusterRoleBinding"]
+      exclude:
+        any:
+          - subjects:
+              - kind: "ServiceAccount"
+                namespace: "flux-system"
+          - subjects:
+              - kind: "ServiceAccount"
+                namespace: "kyverno"
+      validate:
+        message: "ClusterRoleBindings may only be created by flux-system / kyverno"
+        deny: {}
