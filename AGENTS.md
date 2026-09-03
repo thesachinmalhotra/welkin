@@ -10,7 +10,7 @@ OpenMeter Collector        ← the only normalization boundary
     ↓
 Canonical CloudEvent       ← the platform contract
     ├──→ Economic Plane:   OpenMeter → native Stripe integration → Invoice
-    └──→ Archive Plane:    Broker / drop_on → Object Storage → Parquet
+    └──→ Archive Plane:    Broker fan_out → Kafka durable handoff → Archive consumer → Parquet → Object Storage
 ```
 
 ## Canonical sources

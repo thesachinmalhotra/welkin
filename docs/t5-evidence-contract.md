@@ -19,7 +19,7 @@ A T5 PASS artifact must record fresh runtime evidence for all of the following:
 
 `certification.json` records the run timestamps, Kubernetes context/namespace, both event IDs, and the observed evidence values.
 
-The outage-event non-persistence claim is established by runtime temporal ordering: Object Storage unavailability is confirmed before the distinct outage event is accepted, and the exact event is observed in Parquet only after storage recovery. Because the Object Storage endpoint is runtime-unavailable for the entire event-acceptance interval, no archive write can succeed during that interval. The artifact records this as `outage_event_not_persisted_during_outage`.
+The outage-event non-persistence claim is established by runtime temporal ordering: Object Storage unavailability is confirmed before the distinct outage event is accepted, and the exact event is observed in Parquet only after storage recovery. The certification's failure boundary is the unavailable Object Storage service; the outage probe must establish that boundary before the event is accepted, so an archive write to that unavailable service cannot succeed during the tested interval. The artifact records this as `outage_event_not_persisted_during_outage`.
 
 The end-to-end correlation claim does not introduce a Welkin-specific correlation mechanism: the same canonical CloudEvent `id` is checked in Kafka, OpenMeter, and the Parquet `id` column. The artifact records this as `outage_event_id_correlated_end_to_end`.
 

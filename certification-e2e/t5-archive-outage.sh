@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Reuse the already-certified T4 probes; T5 adds only storage failure/recovery.
+# Reuse the shared T4 probes; T5 adds only storage failure/recovery.
 eval "$(sed -n '/^wait_until(){/,/^# ---------------------------------------------------------------------------$/p' certification-e2e/run.sh | head -n 150)"
 NS_WELKIN=welkin-system; NS_ECON=openmeter-system; TOPIC=welkin_canonical
 COLLECTOR_SVC="openmeter-collector.${NS_WELKIN}.svc.cluster.local:8080"
 STRIMZI_KAFKA_IMAGE="quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
-FDQN_KAFKA="welkin-kafka-kafka-bootstrap.${NS_WELKIN}.svc:9093"
 MINIO_PROBE_IMAGE="curlimages/curl:8.10.1"
 PASS=0; FAIL=0; UNVERIFIED=0
 T5_ARTIFACT_DIR="${T5_ARTIFACT_DIR:-${RUNNER_TEMP:-/tmp}/welkin-t5}"
@@ -83,7 +82,7 @@ pass "T5 preconditions satisfied"
 BASELINE_EVENT_ID="t5-$(uuidgen)"
 EVENT_ID="$BASELINE_EVENT_ID"
 BASELINE_POSTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-BODY=$(printf '{"specversion":"1.0","id":"%s","source":"t5","type":"test.t5","time":"2026-01-01T00:00:00Z","subject":"t5","data":{"scenario":"storage-outage"}}' "$EVENT_ID")
+BODY=$(printf '{"specversion":"1.0","id":"%s","source":"t5","type":"test.t5","time":"%s","subject":"t5","data":{"scenario":"storage-outage"}}' "$EVENT_ID" "$BASELINE_POSTED_AT")
 curl -fsS -XPOST "http://$COLLECTOR_SVC/api/v1/events" -H 'Content-Type: application/json' -d "$BODY" >/dev/null || { fail "Collector rejected event"; exit 1; }
 wait_until 60 kafka_has_event "$EVENT_ID" || { fail "event not retained in Kafka"; exit 1; }
 wait_until 60 openmeter_has_event "$EVENT_ID" || { fail "event not in Economic plane"; exit 1; }
@@ -96,7 +95,7 @@ pass "Object Storage unavailable"
 OUTAGE_STORAGE_CONFIRMED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EVENT_ID_OUTAGE="t5-$(uuidgen)"
 OUTAGE_EVENT_POST_ATTEMPTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-BODY_OUTAGE=$(printf '{"specversion":"1.0","id":"%s","source":"t5","type":"test.t5","time":"2026-01-01T00:00:01Z","subject":"t5-outage","data":{"scenario":"storage-down"}}' "$EVENT_ID_OUTAGE")
+BODY_OUTAGE=$(printf '{"specversion":"1.0","id":"%s","source":"t5","type":"test.t5","time":"%s","subject":"t5-outage","data":{"scenario":"storage-down"}}' "$EVENT_ID_OUTAGE" "$OUTAGE_EVENT_POST_ATTEMPTED_AT")
 curl -fsS -XPOST "http://$COLLECTOR_SVC/api/v1/events" -H 'Content-Type: application/json' -d "$BODY_OUTAGE" >/dev/null || { fail "Collector rejected outage event"; exit 1; }
 OUTAGE_EVENT_ACCEPTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 wait_until 60 kafka_has_event "$EVENT_ID_OUTAGE" || { fail "outage event not retained in Kafka"; exit 1; }

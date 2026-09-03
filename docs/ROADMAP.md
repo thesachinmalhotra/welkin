@@ -16,10 +16,12 @@ One active node at a time. Finish → verify → checkpoint → next node. Do no
 
 Truth labels: PASS = fresh evidence; UNVERIFIED = implementation exists but runtime evidence is unavailable; FAIL = evidence demonstrates a defect. Never turn UNVERIFIED into PASS by assumption.
 
-## Current state — 2026-09-02
+## Current state — 2026-09-03
 Branch: `gate-2-gate-3-clean`
-Latest Welkin checkpoint: `aff790a` (T5 implementation checkpoint)
-Current working-tree change: `M certification-e2e/run.sh` (pre-existing T4 work; preserve it).
+Latest Welkin checkpoint: `14e9f6c` (T5-I9 outage-cleanup hardening)
+Working tree: clean.
+
+T5-I1 through T5-I9 are implemented and locally verified where runtime-independent; T5 runtime certification remains UNVERIFIED because this environment has no configured Kubernetes context.
 
 Completed/checkpointed: Gate 1 OpenMeter smoke; Gate 2 canonicalization; Gate 3 Economic + Archive composition/evidence; durable Kafka/S3 handoff without `drop_on`; T4 consumer-group lag/offset probe implementation.
 
@@ -32,7 +34,7 @@ Required proof: baseline event reaches Kafka + Economic; storage unavailable; di
 
 Status: IMPLEMENTED / RUNTIME UNVERIFIED.
 
-Important: current T5 implementation uses Kubernetes MinIO scale-to-zero as failure injection. Review this mechanism against the final failure-injection policy before declaring certification PASS. Do not change it while working on another node.
+Important: current T5 implementation uses Kubernetes MinIO scale-to-zero as failure injection. This is an explicit Kubernetes Deployment lifecycle boundary; runtime certification must still execute the full evidence contract before declaring PASS.
 
 GitHub Actions workflow expects a GitHub Environment containing `WELKIN_KUBECONFIG_B64`. `workflow_dispatch` requires the workflow to be on the default branch for normal manual dispatch.
 

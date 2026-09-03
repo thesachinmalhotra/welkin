@@ -54,8 +54,10 @@ The Collector and Archive pipelines read these via `${VAR:-default}`, so swappin
 for a managed service is an env change, never a code or config change.
 
 ## AGENTS.md rule 3 (planes share the event, not failure fate)
-The Collector buffers and retries each sink independently. Archive death does not stop
-Economic processing, and vice versa. Proven by the decoupling check below.
+The Collector fans the canonical event to the Economic API and the durable Kafka handoff.
+The Archive consumer then persists Kafka records to object storage. An object-storage outage
+does not directly stop Economic processing because the canonical event has already reached the
+durable Archive handoff; Kafka backpressure remains intentional when that handoff itself is unavailable.
 
 ## Verification procedure (zero code — upstream CLIs only)
 ```bash
