@@ -1,42 +1,61 @@
 name: T5 archive outage certification
+
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: GitHub Environment containing WELKIN_KUBECONFIG_B64
-        required: true
-        type: environment
+
 permissions:
   contents: read
+
 concurrency:
-  group: welkin-t5-${{ inputs.environment }}
+  group: welkin-t5-kind
   cancel-in-progress: false
+
 jobs:
   t5:
     name: T5 object-storage outage and recovery
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Configure kubeconfig
+      - name: Create ephemeral Kubernetes cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          cluster_name: welkin-t5
+          node_image: kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f
+          kubectl_version: v1.35.0
+          wait: 120s
+      - name: Install Timoni
+        run: |
+          curl -fsSL -o /tmp/timoni.tgz https://github.com/stefanprodan/timoni/releases/download/v0.34.0/timoni_0.34.0_linux_amd64.tar.gz
+          tar -xzf /tmp/timoni.tgz -C /tmp
+          install -m 0755 /tmp/timoni /usr/local/bin/timoni
+      - name: Install Flux
+        run: |
+          curl -fsSL https://fluxcd.io/install.sh | bash
+          flux install --components=source-controller,helm-controller,kustomize-controller,notification-controller
+          kubectl -n flux-system wait --for=condition=Available deployment/source-controller deployment/helm-controller deployment/kustomize-controller deployment/notification-controller --timeout=180s
+      - name: Configure T5 secrets
+        run: |
+          kubectl create namespace welkin-system --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace openmeter-system --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n welkin-system create secret generic welkin-openmeter-token --from-literal=OPENMETER_API_KEY=changeme --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n openmeter-system create secret generic welkin-stripe --from-literal=STRIPE_API_KEY=sk_test_welkin_t5 --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n welkin-system create secret generic welkin-archive-s3 --from-literal=ARCHIVE_ACCESS_KEY_ID=minio --from-literal=ARCHIVE_SECRET_ACCESS_KEY=minio123 --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n welkin-system create secret generic welkin-minio --from-literal=root-user=minio --from-literal=root-password=minio123 --dry-run=client -o yaml | kubectl apply -f -
+      - name: Apply Welkin platform bundle
         env:
-          KUBECONFIG_B64: ${{ secrets.WELKIN_KUBECONFIG_B64 }}
+          OPENMETER_API_KEY: changeme
+          STRIPE_API_KEY: sk_test_welkin_t5
+          ARCHIVE_ACCESS_KEY_ID: minio
+          ARCHIVE_SECRET_ACCESS_KEY: minio123
+        run: timoni bundle apply -f platform/welkin.bundle.cue --timeout=20m
+      - name: Wait for T5 runtime
         run: |
-          test -n "$KUBECONFIG_B64" || { echo "WELKIN_KUBECONFIG_B64 is required" >&2; exit 2; }
-          umask 077
-          mkdir -p "$RUNNER_TEMP/kube"
-          printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kube/config"
-          echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
-      - name: Install Parquet probe dependencies
-        run: python3 -m pip install --disable-pip-version-check --quiet boto3 pyarrow
-      - name: Cluster preflight
-        run: |
-          kubectl version --client
-          kubectl cluster-info
-          kubectl get namespace welkin-system
-          kubectl get deployment/minio -n welkin-system
-          kubectl get deployment/openmeter-api -n openmeter-system
+          if ! kubectl wait --for=condition=Ready pods --all -A --timeout=900s; then
+            kubectl get pods -A -o wide
+            kubectl get helmreleases -A || true
+            exit 1
+          fi
       - name: Run T5
         env:
           T5_ARTIFACT_DIR: ${{ runner.temp }}/welkin-t5
@@ -49,3 +68,9 @@ jobs:
           path: ${{ runner.temp }}/welkin-t5
           if-no-files-found: warn
           retention-days: 14
+      - name: Dump cluster diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl get helmreleases -A || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -200 || true
