@@ -141,6 +141,9 @@ jobs:
           kubectl kustomize /tmp/welkin-artifact/infra > /tmp/infra-rendered.yaml
           kubectl kustomize /tmp/welkin-artifact/apps > /tmp/apps-rendered.yaml
 
+      - name: Run T5 static network/dependency audit
+        run: bash certification-e2e/t5-static-network-audit.sh
+
       - name: Apply foundation
         run: kubectl apply -k /tmp/welkin-artifact/foundation
 

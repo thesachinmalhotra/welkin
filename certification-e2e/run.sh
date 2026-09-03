@@ -71,6 +71,7 @@ kafka_has_event(){ # event_id
   out=$(kubectl run "e2e-kafka-probe-$(date +%s)" --rm -i --restart=Never --quiet \
     --image="$STRIMZI_KAFKA_IMAGE" --namespace "$NS_WELKIN" \
     --overrides='{
+      "metadata":{"labels":{"app.kubernetes.io/name":"welkin-archive"}},
       "spec":{
         "containers":[{
           "name":"probe",
@@ -95,7 +96,23 @@ kafka_has_event(){ # event_id
         ],
         "restartPolicy":"Never"
       }}' 2>/dev/null || true)
-  printf '%s\n' "$out" | grep -qF "\"id\":\"$id\""
+  # Parse each Kafka message as JSON and compare the canonical CloudEvent
+  # `id` field structurally. Do not use substring matching: a matching string
+  # nested in `data`, logs, or another field is not proof of event identity.
+  printf '%s\n' "$out" | python3 -c '
+import json
+import sys
+
+event_id = sys.argv[1]
+for line in sys.stdin:
+    try:
+        message = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if isinstance(message, dict) and message.get("id") == event_id:
+        raise SystemExit(0)
+raise SystemExit(1)
+' "$id"
 }
 
 # openmeter_has_event event_id — poll OpenMeter's raw event list for the id.
@@ -161,6 +178,7 @@ kafka_archive_group_describe(){
   if ! out=$(kubectl run "$pod" --rm -i --restart=Never --quiet \
     --image="$STRIMZI_KAFKA_IMAGE" --namespace "$NS_WELKIN" \
     --overrides='{
+      "metadata":{"labels":{"app.kubernetes.io/name":"welkin-archive"}},
       "spec":{
         "containers":[{
           "name":"probe",
