@@ -145,24 +145,53 @@ jobs:
         run: bash certification-e2e/t5-static-network-audit.sh
 
       - name: Apply foundation
-        run: kubectl apply -k /tmp/welkin-artifact/foundation
+        run: timeout --signal=TERM 300s kubectl apply -k /tmp/welkin-artifact/foundation
+
+      - name: Diagnose foundation apply
+        if: failure()
+        run: |
+          kubectl get helmreleases -A -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -200 || true
 
       - name: Wait for platform controllers
         run: |
           kubectl wait --for=condition=Ready helmrelease/strimzi -n welkin-system --timeout=600s
           kubectl wait --for=condition=Ready helmrelease/kyverno -n kyverno --timeout=600s
 
+      - name: Diagnose platform controller state
+        if: failure()
+        run: |
+          kubectl get helmreleases -A -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -200 || true
+
       - name: Install Welkin infrastructure resources
         run: |
-          kubectl apply -k /tmp/welkin-artifact/infra
+          timeout --signal=TERM 300s kubectl apply -k /tmp/welkin-artifact/infra
           kubectl wait --for=condition=Ready kafka/welkin-kafka -n welkin-system --timeout=600s
           kubectl wait --for=condition=Ready kafkatopic/welkin_canonical -n welkin-system --timeout=300s
           kubectl wait --for=condition=Ready kafkauser/welkin-collector-kafka -n welkin-system --timeout=300s
           kubectl wait --for=condition=Ready kafkauser/welkin-archive-kafka -n welkin-system --timeout=300s
           kubectl get kafkauser -n welkin-system
 
+      - name: Diagnose infrastructure state
+        if: failure()
+        run: |
+          kubectl get kafka,kafkatopic,kafkauser -A -o wide || true
+          kubectl get helmreleases -A -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -200 || true
+
       - name: Apply applications
-        run: kubectl apply -k /tmp/welkin-artifact/apps
+        run: timeout --signal=TERM 300s kubectl apply -k /tmp/welkin-artifact/apps
+
+      - name: Diagnose application apply
+        if: failure()
+        run: |
+          kubectl get helmreleases -A -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -200 || true
 
       - name: Wait for application releases
         run: |
