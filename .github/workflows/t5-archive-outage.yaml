@@ -32,7 +32,7 @@ jobs:
         run: |
           helm repo add cilium https://helm.cilium.io/
           helm repo update
-          API_SERVER_IP="$(kubectl get node welkin-t5-control-plane -o jsonpath='{.status.addresses[?(@.type==\"InternalIP\")].address}')"
+          API_SERVER_IP="$(kubectl get node welkin-t5-control-plane -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
           test -n "$API_SERVER_IP"
           helm install cilium cilium/cilium \
             --version 1.17.16 \
