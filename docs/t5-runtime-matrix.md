@@ -6,7 +6,7 @@ because a tool installer or controller release changes underneath the test.
 | Component | T5 version | Compatibility basis |
 | --- | --- | --- |
 | Kubernetes / Kind node image | 1.32.8 | Kind node image is pinned by digest in the workflow. |
-| Cilium | 1.17.0 | Cilium 1.17 documents Kubernetes 1.29, 1.30, 1.31, and 1.32 as e2e-tested/guaranteed compatible. |
+| Cilium | 1.17.16 | Cilium 1.17 documents Kubernetes 1.29, 1.30, 1.31, and 1.32 as e2e-tested/guaranteed compatible. |
 | Flux CLI + controllers | 2.7.5 | Flux 2.7 documents Kubernetes 1.32 as supported from 1.32.0. CLI and controller manifests are installed at the same pinned version. |
 | Strimzi | 0.45.0 | Strimzi 0.45 supports Kubernetes 1.25+ and Kafka 3.9.0. |
 | Apache Kafka | 3.9.0 | Kafka version selected by the Strimzi 0.45 Kafka CR. |

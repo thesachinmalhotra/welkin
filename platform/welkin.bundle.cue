@@ -23,7 +23,7 @@ product: {
 		postgresqlVersion: "16.1.2"
 		// Substrate (infra) plane — portable, cloud-agnostic.
 		strimziVersion: "0.45.0"
-		ciliumVersion:  "1.17.0"
+		ciliumVersion:  "1.17.16"
 		kyvernoVersion: "1.14.0"
 	}
 

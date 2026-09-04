@@ -15,7 +15,7 @@ jobs:
     name: T5 object-storage outage and recovery
     runs-on: ubuntu-24.04
     timeout-minutes: 75
-    # T5 runtime matrix: Kubernetes 1.32.8 / Cilium 1.17.0 / Flux 2.7.5 / Strimzi 0.45.0 / Kafka 3.9.0
+    # T5 runtime matrix: Kubernetes 1.32.8 / Cilium 1.17.16 / Flux 2.7.5 / Strimzi 0.45.0 / Kafka 3.9.0
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -32,12 +32,14 @@ jobs:
         run: |
           helm repo add cilium https://helm.cilium.io/
           helm repo update
+          API_SERVER_IP="$(kubectl get node welkin-t5-control-plane -o jsonpath='{.status.addresses[?(@.type==\"InternalIP\")].address}')"
+          test -n "$API_SERVER_IP"
           helm install cilium cilium/cilium \
-            --version 1.17.0 \
+            --version 1.17.16 \
             --namespace kube-system \
             --set ipam.mode=kubernetes \
             --set kubeProxyReplacement=true \
-            --set k8sServiceHost=welkin-t5-control-plane \
+            --set k8sServiceHost="$API_SERVER_IP" \
             --set k8sServicePort=6443 \
             --set operator.replicas=1 \
             --set hubble.enabled=true \
