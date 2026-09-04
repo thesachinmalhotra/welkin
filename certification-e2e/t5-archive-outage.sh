@@ -26,6 +26,9 @@ FDQN_KAFKA="welkin-kafka-kafka-bootstrap.${NS_WELKIN}.svc:9093"
 COLLECTOR_LOCAL_URL="http://127.0.0.1:18080"
 STRIMZI_KAFKA_IMAGE="quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
 
+# Reuse the audited Kafka/OpenMeter/group probe implementations.
+source "./t5-kafka-probes.sh"
+
 PASS=0
 FAIL=0
 UNVERIFIED=0

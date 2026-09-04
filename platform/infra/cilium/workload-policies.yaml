@@ -32,6 +32,50 @@ spec:
             - port: "9092"
               protocol: TCP
 ---
+# Welkin Kafka destination ingress. The workload default-deny applies ingress,
+# so destination-side permission is required in addition to client egress.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kafka-ingress
+  namespace: welkin-system
+spec:
+  endpointSelector:
+    matchLabels:
+      strimzi.io/cluster: welkin-kafka
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: welkin-system
+            app.kubernetes.io/name: openmeter-collector
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: welkin-system
+            app.kubernetes.io/name: welkin-archive
+      toPorts:
+        - ports:
+            - port: 9093
+              protocol: TCP
+---
+# MinIO destination ingress. Archive is the sole workload writer.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: minio-ingress
+  namespace: welkin-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: welkin-system
+            app.kubernetes.io/name: welkin-archive
+      toPorts:
+        - ports:
+            - port: 9000
+              protocol: TCP
+---
 # Collector: may reach OpenMeter API (8080) and Welkin's Kafka (9093).
 # Producers reach it on 8080 (handled by base + this ingress).
 apiVersion: cilium.io/v2
@@ -63,6 +107,44 @@ spec:
       toPorts:
         - ports:
             - port: "9093"
+              protocol: TCP
+---
+# OpenMeter's bundled Kafka and Postgres are inside the economic trust domain.
+# Their destination-side ingress must be explicit under workload default-deny.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: economic-kafka-ingress
+  namespace: openmeter-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openmeter-system
+      toPorts:
+        - ports:
+            - port: 9092
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: economic-postgres-ingress
+  namespace: openmeter-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openmeter-system
+      toPorts:
+        - ports:
+            - port: 5432
               protocol: TCP
 ---
 # Archive: consume Welkin Kafka (9093) + write archive bucket (MinIO 9000).

@@ -83,3 +83,9 @@ has 'wait_until 30 minio_up' "$T5_ARCHIVE"
 has 'trap cleanup EXIT' "$T5_ARCHIVE"
 
 echo "PASS: T5 static network/dependency audit"
+
+# Destination-side ingress checks: workload default-deny applies both directions.
+has 'name: kafka-ingress' "$POLICY"
+has 'name: minio-ingress' "$POLICY"
+has 'name: economic-kafka-ingress' "$POLICY"
+has 'name: economic-postgres-ingress' "$POLICY"

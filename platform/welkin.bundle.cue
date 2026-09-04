@@ -226,6 +226,7 @@ collectorValues: {
 		// Match upstream quickstart naming so the Service DNS name is
 		// openmeter-collector.<namespace>.svc.
 		fullnameOverride: "openmeter-collector"
+		nameOverride: "openmeter-collector"
 
 		// Secrets (OpenMeter API key) arrive via the SOPS-encrypted Secret.
 		envFrom: [{secretRef: {name: "welkin-openmeter-token"}}]
@@ -491,6 +492,7 @@ archiveValues: {
 	}
 	helmValues: {
 		fullnameOverride: "welkin-archive"
+		nameOverride: "welkin-archive"
 
 		// S3 creds arrive via the SOPS-encrypted Secret.
 		envFrom: [{secretRef: {name: "welkin-archive-s3"}}]

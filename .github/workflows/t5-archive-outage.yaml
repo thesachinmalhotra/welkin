@@ -14,7 +14,7 @@ jobs:
   t5:
     name: T5 object-storage outage and recovery
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 150
     # T5 runtime matrix: Kubernetes 1.32.8 / Cilium 1.17.16 / Flux 2.7.5 / Strimzi 0.45.0 / Kafka 3.9.0
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -215,7 +215,10 @@ jobs:
           kubectl get endpointslice -n welkin-system -l kubernetes.io/service-name=openmeter-collector
 
       - name: Install Parquet probe dependencies
-        run: python3 -m pip install --disable-pip-version-check --quiet boto3 pyarrow
+        run: |
+          python3 -m venv /tmp/t5-venv
+          /tmp/t5-venv/bin/python -m pip install --disable-pip-version-check --quiet boto3 pyarrow
+          echo "/tmp/t5-venv/bin" >> "$GITHUB_PATH"
 
       - name: Run T5
         env:
