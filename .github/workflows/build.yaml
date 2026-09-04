@@ -38,7 +38,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install timoni
-        run: curl -fsSL https://timoni.sh/install | bash
+        run: |
+          curl -fsSL -o /tmp/timoni.tgz https://github.com/stefanprodan/timoni/releases/download/v0.34.0/timoni_0.34.0_linux_amd64.tar.gz
+          tar -xzf /tmp/timoni.tgz -C /tmp
+          install -m 0755 /tmp/timoni /usr/local/bin/timoni
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.7.0
@@ -62,7 +65,7 @@ jobs:
           ARCHIVE_S3_ACCESS_KEY_ID: ${{ secrets.ARCHIVE_S3_ACCESS_KEY_ID }}
           ARCHIVE_S3_SECRET_ACCESS_KEY: ${{ secrets.ARCHIVE_S3_SECRET_ACCESS_KEY }}
         run: |
-          cat > /tmp/welkin-secrets.yaml <<'EOF'
+          cat > /tmp/welkin-secrets.yaml <<EOF
           apiVersion: v1
           kind: Secret
           metadata:
@@ -103,17 +106,60 @@ jobs:
           EOF
           # .sops.yaml carries the age public key -> encrypts stringData only.
           sops --encrypt -i /tmp/welkin-secrets.yaml
-          # Flux artifact must be a directory with a kustomization.yaml so
-          # Kustomization path "./" resolves. Keep manifests and encrypted
-          # Secrets as separate files — concatenating into one welkin-full.yaml
-          # creates an extra empty document that `kustomize build` rejects.
-          mkdir -p /tmp/artifact
-          cp /tmp/welkin-manifests.yaml /tmp/artifact/welkin.yaml
-          cp /tmp/welkin-secrets.yaml /tmp/artifact/welkin-secrets.yaml
-          printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n- welkin.yaml\n- welkin-secrets.yaml\n' \
-            > /tmp/artifact/kustomization.yaml
-          # Local proof that the artifact is valid Kustomization input (requested in review).
-          kubectl kustomize /tmp/artifact > /dev/null
+          # Flux artifact is deliberately split by lifecycle dependency so CRDs
+          # and controllers exist before their custom resources are reconciled.
+          # The three Flux Kustomizations in clusters/dev consume these paths:
+          # foundation -> infra -> apps.
+          mkdir -p /tmp/artifact/foundation /tmp/artifact/infra/cilium /tmp/artifact/infra/kyverno /tmp/artifact/infra/strimzi /tmp/artifact/apps
+          cp /tmp/welkin-secrets.yaml /tmp/artifact/foundation/welkin-secrets.yaml
+          rm -f /tmp/artifact/foundation/welkin.yaml /tmp/artifact/apps/welkin.yaml
+          awk '
+          /^# Instance: / {
+            instance=$3
+            if (instance ~ /^(cilium|kyverno|strimzi|postgres|minio)$/) out="/tmp/artifact/foundation/welkin.yaml"
+            else if (instance ~ /^(openmeter|collector|archive)$/) out="/tmp/artifact/apps/welkin.yaml"
+            else { print "unexpected instance " instance > "/dev/stderr"; exit 1 }
+            next
+          }
+          /^---$/ { next }
+          /^apiVersion:/ { print "---" > out; print > out; next }
+          out != "" { print > out; next }
+          NF { print "unexpected rendered line for instance " instance > "/dev/stderr"; exit 1 }
+          ' /tmp/welkin-manifests.yaml
+          test -s /tmp/artifact/foundation/welkin.yaml
+          test -s /tmp/artifact/apps/welkin.yaml
+          cp platform/infra/cilium/*.yaml /tmp/artifact/infra/cilium/
+          cp platform/infra/kyverno/*.yaml /tmp/artifact/infra/kyverno/
+          cp platform/infra/strimzi/*.yaml /tmp/artifact/infra/strimzi/
+          cat > /tmp/artifact/foundation/kustomization.yaml <<'EOF'
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+          - welkin.yaml
+          - welkin-secrets.yaml
+          EOF
+          cat > /tmp/artifact/infra/kustomization.yaml <<'EOF'
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+          - cilium/base-allow.ciliumclusterwidenetworkpolicy.yaml
+          - cilium/default-deny.ciliumclusterwidenetworkpolicy.yaml
+          - cilium/workload-policies.yaml
+          - kyverno/policies.yaml
+          - strimzi/kafka.yaml
+          - strimzi/kafka-users.yaml
+          EOF
+          cat > /tmp/artifact/apps/kustomization.yaml <<'EOF'
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+          - welkin.yaml
+          EOF
+          # Build each artifact stage exactly as Flux kustomize-controller will.
+          kubectl kustomize /tmp/artifact/foundation > /dev/null
+          kubectl kustomize /tmp/artifact/infra > /dev/null
+          kubectl kustomize /tmp/artifact/apps > /dev/null
+
 
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \

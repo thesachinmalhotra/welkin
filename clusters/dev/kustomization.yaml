@@ -1,15 +1,21 @@
-# Reconiles the signed+encrypted artifact. SOPS decrypts secrets at apply
-# time; cosign verification happens in the OCIRepository. Cilium/kyverno/
-# strimzi install ordering is encoded in the rendered HelmRelease dependsOn.
+# Flux deployment graph for the signed Welkin OCI artifact.
+# Keep lifecycle boundaries explicit: foundation installs the controllers and
+# stateful dependencies, infra applies CRs/policies after those CRDs/controllers
+# are Ready, and apps starts workload HelmReleases only after infra is Ready.
+# This avoids a bootstrap cycle where Archive needs Strimzi resources that are
+# not created until the Strimzi operator is running.
+---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: welkin
+  name: welkin-foundation
   namespace: flux-system
 spec:
   interval: 10m
-  path: "./"
+  retryInterval: 30s
+  path: "./foundation"
   prune: true
+  wait: true
   sourceRef:
     kind: OCIRepository
     name: welkin
@@ -17,4 +23,61 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: cilium
+      namespace: kube-system
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: kyverno
+      namespace: kyverno
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: strimzi
+      namespace: welkin-system
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: postgres
+      namespace: openmeter-system
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: minio
+      namespace: welkin-system
+  timeout: 15m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: welkin-infra
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 30s
+  path: "./infra"
+  prune: true
+  wait: true
+  sourceRef:
+    kind: OCIRepository
+    name: welkin
+  dependsOn:
+    - name: welkin-foundation
+  timeout: 15m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: welkin-apps
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 30s
+  path: "./apps"
+  prune: true
+  wait: true
+  sourceRef:
+    kind: OCIRepository
+    name: welkin
+  dependsOn:
+    - name: welkin-infra
   timeout: 15m
