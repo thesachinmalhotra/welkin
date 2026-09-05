@@ -23,7 +23,6 @@ product: {
 		postgresqlVersion: "16.1.2"
 		// Substrate (infra) plane — portable, cloud-agnostic.
 		strimziVersion: "0.45.0"
-		ciliumVersion:  "1.17.16"
 		kyvernoVersion: "3.4.0"
 	}
 
@@ -635,51 +634,6 @@ minioValues: {
   }
 }
 
-// Cilium — the cluster CNI and zero-trust dataplane.
-// Installed FIRST (foundational): eBPF kube-proxy replacement, Hubble
-// observability, WireGuard transparent encryption. Identity-aware policies
-// (CiliumNetworkPolicy / CiliumClusterWideNetworkPolicy) enforce the
-// "OpenMeter is enemy" boundary by Kubernetes service account / namespace,
-// not pod IP.
-ciliumValues: {
-	repository: url: "oci://registry-1.docker.io/cilium/charts"
-	chart: {
-		name:    "cilium"
-		version: product.charts.ciliumVersion
-	}
-	sync: {
-		targetNamespace: "kube-system"
-		createNamespace: true
-		timeout:         15
-	}
-	helmValues: {
-		// ponytail: kube-proxy replacement requires the chart's init to run
-		// privileged; acceptable for a CNI. Single-replica operator is fine.
-		kubeProxyReplacement: "true"
-		operator: {replicas: 1}
-
-		// Hubble — real-time flow observability (continuous verification of the
-		// isolation boundary). Relay + UI for humans; Prometheus for metrics.
-		hubble: {
-			enabled:          true
-			metrics: {enabled: {dns: true, drop: true, tcp: true, flow: true, icmp: true, http: true}}
-			relay:   {enabled: true}
-			ui:      {enabled: true}
-		}
-
-		// WireGuard transparent encryption between nodes.
-		encryption: {
-			enabled: true
-			type:    "wireguard"
-		}
-
-		// L7 policy engine (Envoy) for Kafka-protocol filtering on shared brokers.
-		envoyConfig: {enabled: true}
-
-		ipam: {mode: "kubernetes"}
-	}
-}
-
 // Kyverno — policy-as-code admission controller (YAML-native, no Rego).
 // Enforces the "enemy" guardrails as reviewable, GitOps-synced policy:
 //   - workload-scoped default-deny is enforced by Cilium
@@ -737,24 +691,16 @@ strimziValues: {
 // Trust domains:
 //   welkin-system    — collector, archive, minio, strimzi (Welkin-owned)
 //   openmeter-system — openmeter, postgres (untrusted economic tenant)
-//   kube-system      — cilium (CNI)
+//   kube-system      — Cilium bootstrap (CNI)
 //   kyverno          — kyverno (policy)
 //
-// Install order: cilium (CNI) -> kyverno (policy) -> strimzi (kafka) ->
+// Bootstrap order: Cilium (CNI) -> Flux -> kyverno (policy) -> strimzi (kafka) ->
 // postgres -> openmeter -> collector -> archive -> minio.
 
 bundle: {
 	apiVersion: "v1alpha1"
 	name:       "welkin"
 	instances: {
-		cilium: {
-			module: {
-				url:     "oci://ghcr.io/stefanprodan/modules/flux-helm-release"
-				version: product.charts.fluxModuleVersion
-			}
-			namespace: "kube-system"
-			values:    ciliumValues
-		}
 
 		kyverno: {
 			module: {
@@ -762,9 +708,7 @@ bundle: {
 				version: product.charts.fluxModuleVersion
 			}
 			namespace: "kyverno"
-			values:    kyvernoValues & {
-				dependsOn: [{name: "cilium"}]
-			}
+			values:    kyvernoValues
 		}
 
 		strimzi: {
@@ -773,9 +717,7 @@ bundle: {
 				version: product.charts.fluxModuleVersion
 			}
 			namespace: runtime.welkinNamespace
-			values:    strimziValues & {
-				dependsOn: [{name: "cilium"}]
-			}
+			values:    strimziValues
 		}
 
 		postgres: {
@@ -784,9 +726,7 @@ bundle: {
 				version: product.charts.fluxModuleVersion
 			}
 			namespace: runtime.economicNamespace
-			values:    postgresValues & {
-				dependsOn: [{name: "cilium"}]
-			}
+			values:    postgresValues
 		}
 
 		openmeter: {
@@ -828,9 +768,7 @@ bundle: {
 				version: product.charts.fluxModuleVersion
 			}
 			namespace: runtime.welkinNamespace
-			values:    minioValues & {
-				dependsOn: [{name: "cilium"}]
-			}
+			values:    minioValues
 		}
 	}
 }

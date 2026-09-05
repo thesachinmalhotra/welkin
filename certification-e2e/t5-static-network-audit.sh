@@ -32,7 +32,12 @@ has 'app.kubernetes.io/name: welkin-archive' "$POLICY"
 has 'port: "9093"' "$POLICY"
 
 # T5-18: Timoni dependency ordering plus application data-plane edges.
-has 'dependsOn: [{name: "cilium"}]' "$BUNDLE"
+if grep -Fq 'dependsOn: [{name: "cilium"}]' "$BUNDLE"; then
+  fail "Flux HelmRelease depends on bootstrap-only Cilium"
+fi
+if grep -Fq $'\tcilium:' "$BUNDLE"; then
+  fail "Cilium must not be rendered as a Welkin Flux bundle instance"
+fi
 has 'dependsOn: [{name: "postgres"}]' "$BUNDLE"
 has 'dependsOn: [{name: "openmeter", namespace: runtime.economicNamespace}, {name: "strimzi"}]' "$BUNDLE"
 has 'namespace: runtime.economicNamespace' "$BUNDLE"
@@ -55,10 +60,11 @@ if grep -Fq 'grep -qF \"\"id\":\"$id\"\"' "$ROOT/certification-e2e/run.sh"; then
 fi
 
 T5_ARCHIVE="$ROOT/certification-e2e/t5-archive-outage.sh"
+T5_PROBES="$ROOT/certification-e2e/t5-kafka-probes.sh"
 # T5-21: archive lookup must enumerate every object page and inspect only the
 # canonical Parquet identity column; a single ListObjectsV2 page is insufficient.
-has 'get_paginator("list_objects_v2")' "$T5_ARCHIVE"
-has 'columns=["id"]' "$T5_ARCHIVE"
+has 'get_paginator("list_objects_v2")' "$T5_PROBES"
+has 'columns=["id"]' "$T5_PROBES"
 
 # T5-22: the causal proof must remain explicitly scoped to the tested storage
 # boundary rather than silently claiming a direct negative object-store query.

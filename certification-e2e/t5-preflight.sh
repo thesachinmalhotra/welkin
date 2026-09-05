@@ -17,6 +17,7 @@ require_cmd timoni
 require_cmd kubectl
 require_cmd helm
 require_cmd python3
+not_has 'archive_has_event(){' certification-e2e/t5-archive-outage.sh
 require_cmd jq
 require_cmd curl
 require_cmd actionlint
@@ -73,10 +74,12 @@ timoni bundle lint -f platform/welkin.bundle.cue
 timoni bundle build -f platform/welkin.bundle.cue --runtime-from-env > "$TMP/welkin-manifests.yaml"
 
 count="$(grep -c '^# Instance:' "$TMP/welkin-manifests.yaml")"
-[[ "$count" == "8" ]] || fail "expected 8 Timoni instances, got $count"
-for instance in cilium kyverno strimzi postgres openmeter collector archive minio; do
+[[ "$count" == "7" ]] || fail "expected 7 Timoni instances, got $count"
+for instance in kyverno strimzi postgres openmeter collector archive minio; do
   grep -q "^# Instance: $instance$" "$TMP/welkin-manifests.yaml" || fail "missing rendered instance: $instance"
 done
+not_has 'cilium:' platform/welkin.bundle.cue
+not_has 'dependsOn: [{name: "cilium"}]' platform/welkin.bundle.cue
 
 echo "== Exact T5 artifact assembly =="
 mkdir -p "$TMP/artifact/foundation" "$TMP/artifact/infra/cilium" "$TMP/artifact/infra/kyverno" "$TMP/artifact/infra/strimzi" "$TMP/artifact/apps"
@@ -86,7 +89,6 @@ awk -v root="$TMP/artifact" '
 /^# Instance: / {
   instance=$3
   if (instance ~ /^(kyverno|strimzi|postgres|minio)$/) out=root "/foundation/welkin.yaml"
-  else if (instance == "cilium") out=root "/cilium.yaml"
   else if (instance ~ /^(openmeter|collector|archive)$/) out=root "/apps/welkin.yaml"
   else { print "unexpected instance " instance > "/dev/stderr"; exit 1 }
   next
@@ -97,7 +99,6 @@ out != "" { print > out; next }
 NF { print "unexpected rendered line for instance " instance > "/dev/stderr"; exit 1 }
 ' "$TMP/welkin-manifests.yaml"
 
-rm -f "$TMP/artifact/cilium.yaml"
 cp platform/infra/cilium/*.yaml "$TMP/artifact/infra/cilium/"
 cp platform/infra/kyverno/*.yaml "$TMP/artifact/infra/kyverno/"
 cp platform/infra/strimzi/*.yaml "$TMP/artifact/infra/strimzi/"
