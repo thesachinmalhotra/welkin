@@ -30,8 +30,12 @@ jobs:
 
       - name: Bootstrap Cilium
         run: |
-          helm repo add cilium https://helm.cilium.io/
-          helm repo update
+          helm repo add cilium https://helm.cilium.io/ --force-update
+          for attempt in 1 2 3 4 5; do
+            helm repo update && break
+            [[ "$attempt" -eq 5 ]] && exit 1
+            sleep $((attempt * 2))
+          done
           API_SERVER_IP="$(kubectl get node welkin-t5-control-plane -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
           test -n "$API_SERVER_IP"
           helm install cilium cilium/cilium \
@@ -47,7 +51,7 @@ jobs:
             --set hubble.ui.enabled=true \
             --set encryption.enabled=true \
             --set encryption.type=wireguard \
-            --set enableEnvoyConfig=true
+            --set envoyConfig.enabled=true
           kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=cilium --timeout=300s
           kubectl -n kube-system rollout status deployment/cilium-operator --timeout=300s
           kubectl -n kube-system rollout status daemonset/cilium --timeout=300s
@@ -58,7 +62,10 @@ jobs:
           kubectl -n kube-system get pods -l k8s-app=cilium
       - name: Install Timoni
         run: |
-          curl -fsSL -o /tmp/timoni.tgz https://github.com/stefanprodan/timoni/releases/download/v0.34.0/timoni_0.34.0_linux_amd64.tar.gz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+            -o /tmp/timoni.tgz \
+            https://github.com/stefanprodan/timoni/releases/download/v0.34.0/timoni_0.34.0_linux_amd64.tar.gz
+          printf "%s  %s\n" "232c5f20fb397981143ecb150bcb268e3131809c144e8a3368d8d81a0d2406f4" /tmp/timoni.tgz | sha256sum --check
           tar -xzf /tmp/timoni.tgz -C /tmp
           install -m 0755 /tmp/timoni /usr/local/bin/timoni
 
@@ -219,10 +226,15 @@ jobs:
           kubectl get endpointslice -n welkin-system -l kubernetes.io/service-name=minio
           kubectl get endpointslice -n welkin-system -l kubernetes.io/service-name=openmeter-collector
 
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.12.3'
+
       - name: Install Parquet probe dependencies
         run: |
-          python3 -m venv /tmp/t5-venv
-          /tmp/t5-venv/bin/python -m pip install --disable-pip-version-check --quiet boto3 pyarrow
+          python -m venv /tmp/t5-venv
+          /tmp/t5-venv/bin/python -m pip install --disable-pip-version-check --quiet -r certification-e2e/requirements-t5.txt
           echo "/tmp/t5-venv/bin" >> "$GITHUB_PATH"
 
       - name: Run T5

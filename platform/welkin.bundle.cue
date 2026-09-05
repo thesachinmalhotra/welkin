@@ -807,7 +807,7 @@ bundle: {
 			}
 			namespace: runtime.welkinNamespace
 			values: collectorValues & {
-				dependsOn: [{name: "openmeter"}, {name: "strimzi"}]
+				dependsOn: [{name: "openmeter", namespace: runtime.economicNamespace}, {name: "strimzi"}]
 			}
 		}
 

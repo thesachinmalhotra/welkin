@@ -27,7 +27,7 @@ COLLECTOR_LOCAL_URL="http://127.0.0.1:18080"
 STRIMZI_KAFKA_IMAGE="quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
 
 # Reuse the audited Kafka/OpenMeter/group probe implementations.
-source "./t5-kafka-probes.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/t5-kafka-probes.sh"
 
 PASS=0
 FAIL=0
@@ -35,7 +35,7 @@ UNVERIFIED=0
 COLLECTOR_PORT_PID=0
 T5_ARTIFACT_DIR="${T5_ARTIFACT_DIR:-${RUNNER_TEMP:-/tmp}/welkin-t5}"
 mkdir -p "$T5_ARTIFACT_DIR"
-RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
 pass(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 fail(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
@@ -217,8 +217,8 @@ kafka_archive_group_lag >/dev/null || {
 }
 pass "T5 preconditions satisfied"
 
-BASELINE_EVENT_ID="t5-$(uuidgen)"
-BASELINE_POSTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+BASELINE_EVENT_ID="t5-$(python3 -c 'import uuid; print(uuid.uuid4())')"
+BASELINE_POSTED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 BASELINE_BODY=$(printf '{"specversion":"1.0","id":"%s","source":"t5","type":"test.t5","time":"%s","subject":"t5","data":{"scenario":"storage-outage"}}' \
   "$BASELINE_EVENT_ID" "$BASELINE_POSTED_AT")
 
@@ -245,7 +245,7 @@ BASELINE_LAG=$(kafka_archive_group_lag) || {
 }
 pass "baseline event reached Kafka and Economic plane with Archive caught up"
 
-STORAGE_OUTAGE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+STORAGE_OUTAGE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 kubectl patch helmrelease/minio -n "$NS_WELKIN" --type=merge -p '{"spec":{"suspend":true}}' >/dev/null
 MINIO_HR_SUSPENDED=1
 kubectl scale deployment/minio -n "$NS_WELKIN" \
@@ -256,7 +256,7 @@ wait_until 30 minio_down || {
   exit 1
 }
 
-OUTAGE_STORAGE_CONFIRMED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+OUTAGE_STORAGE_CONFIRMED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 OUTAGE_MINIO_REPLICAS=$(kubectl get deployment/minio -n "$NS_WELKIN" -o jsonpath='{.spec.replicas}')
 [[ "$OUTAGE_MINIO_REPLICAS" == "0" ]] || {
   fail "MinIO Deployment replica count was not zero at outage confirmation"
@@ -264,8 +264,8 @@ OUTAGE_MINIO_REPLICAS=$(kubectl get deployment/minio -n "$NS_WELKIN" -o jsonpath
 }
 pass "Object Storage unavailable with Deployment replicas=0"
 
-EVENT_ID_OUTAGE="t5-$(uuidgen)"
-OUTAGE_EVENT_POST_ATTEMPTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+EVENT_ID_OUTAGE="t5-$(python3 -c 'import uuid; print(uuid.uuid4())')"
+OUTAGE_EVENT_POST_ATTEMPTED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 OUTAGE_BODY=$(printf '{"specversion":"1.0","id":"%s","source":"t5","type":"test.t5","time":"%s","subject":"t5-outage","data":{"scenario":"storage-down"}}' \
   "$EVENT_ID_OUTAGE" "$OUTAGE_EVENT_POST_ATTEMPTED_AT")
 
@@ -274,7 +274,7 @@ curl -fsS -XPOST "$COLLECTOR_LOCAL_URL/api/v1/events" \
   fail "Collector rejected outage event"
   exit 1
 }
-OUTAGE_EVENT_ACCEPTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+OUTAGE_EVENT_ACCEPTED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
 wait_until 60 kafka_has_event "$EVENT_ID_OUTAGE" || {
   fail "outage event not retained in Kafka"
@@ -299,13 +299,13 @@ wait_until 60 openmeter_has_event "$EVENT_ID_OUTAGE" || {
 pass "Kafka retained event, Archive lagged, Economic plane stayed functional"
 
 restore_minio || { fail "Object Storage did not recover"; exit 1; }
-STORAGE_RECOVERED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+STORAGE_RECOVERED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
 wait_until 180 archive_has_event "$EVENT_ID_OUTAGE" || {
   fail "exact outage event not persisted after recovery"
   exit 1
 }
-ARCHIVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+ARCHIVED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
 wait_until 120 caught_up || {
   fail "Archive did not catch up"

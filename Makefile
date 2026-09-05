@@ -1,7 +1,7 @@
 # Welkin platform — local + CI tasks.
 # Prereqs (dev): timoni, yq, kubectl, cosign, sops, age, k3d/k3s (for e2e).
 
-.PHONY: lint build export-gates e2e keys
+.PHONY: lint build export-gates e2e t5-preflight keys
 
 # Lint the Timoni bundle (CUE package compiles + instances valid).
 lint:
@@ -22,6 +22,10 @@ export-gates: build
 # isolation assertions). See certification-e2e/run.sh.
 e2e:
 	./certification-e2e/run.sh
+
+# Full T5 preflight: validates the exact CI execution surface without starting CI.
+t5-preflight:
+	./certification-e2e/t5-preflight.sh
 
 # Generate age + cosign keypairs for SOPS/Flux verification (one-time).
 keys:

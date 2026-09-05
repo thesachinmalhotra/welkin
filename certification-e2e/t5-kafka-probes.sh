@@ -78,38 +78,84 @@ openmeter_has_event(){ # event_id
   return "$result"
 }
 
-# archive_has_event event_id — scan the newest archived Parquet objects for the
-# id. The `data` column is BYTE_ARRAY; we decode JSON and match .id.
-# NOTE: requires python3 + pyarrow + boto3 inside a temporary probe pod. If the
-# probe image or S3 creds are wrong, wait_until times out and this FAILs/UNVERIFIED
-# honestly instead of faking PASS. `data` is a raw-UTF8 BYTE_ARRAY (not base64);
-# decode directly, then match the specific id.
+# archive_has_event event_id — scan every archived Parquet object for the exact
+# canonical id column. The probe runs on the CI runner, where the T5 Python
+# dependencies are installed explicitly from certification-e2e/requirements-t5.txt.
 archive_has_event(){ # event_id
   local id=$1
-  kubectl run "e2e-arc-probe-$(date +%s%N)" --rm -i --restart=Never --quiet \
-    --image="${ARCHIVE_PROBE_IMAGE:-python:3.12-slim}" --namespace "$NS_WELKIN" \
-    --env "AWS_ACCESS_KEY_ID=${ARCHIVE_ACCESS_KEY_ID:-minio}" \
-    --env "AWS_SECRET_ACCESS_KEY=${ARCHIVE_SECRET_ACCESS_KEY:-minio123}" \
-    --command -- python3 - "$id" "$NS_WELKIN" "$BUCKET" <<'PY'
-import sys, io, json
-import boto3, pyarrow.parquet as pq
+  local pid=0 ready=0 result=1
+
+  kubectl port-forward --address 127.0.0.1 -n "$NS_WELKIN" svc/minio 19000:9000 \
+    >"${T5_ARTIFACT_DIR}/s3-port-forward.log" 2>&1 &
+  pid=$!
+  for _ in {1..30}; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "archive probe: MinIO port-forward exited" >&2
+      return 1
+    fi
+    if curl -fsS --max-time 3 http://127.0.0.1:19000/minio/health/live >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" -ne 1 ]]; then
+    echo "archive probe: MinIO port-forward never became healthy" >&2
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    return 1
+  fi
+
+  local access_key secret_key
+  access_key=$(kubectl get secret welkin-archive-s3 -n "$NS_WELKIN" \
+    -o jsonpath='{.data.ARCHIVE_ACCESS_KEY_ID}' | base64 -d) || result=1
+  secret_key=$(kubectl get secret welkin-archive-s3 -n "$NS_WELKIN" \
+    -o jsonpath='{.data.ARCHIVE_SECRET_ACCESS_KEY}' | base64 -d) || result=1
+  if [[ "$result" -ne 0 || -z "$access_key" || -z "$secret_key" ]]; then
+    echo "archive probe: archive credentials unavailable" >&2
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    return 1
+  fi
+
+  AWS_ACCESS_KEY_ID="$access_key" \
+  AWS_SECRET_ACCESS_KEY="$secret_key" \
+  ARCHIVE_S3_ENDPOINT="http://127.0.0.1:19000" \
+  ARCHIVE_S3_BUCKET="$BUCKET" \
+  python3 - "$id" <<'PY' || result=$?
+import io
+import os
+import sys
+import boto3
+import pyarrow.parquet as pq
 
 event_id = sys.argv[1]
-endpoint = "http://minio.%s.svc:9000" % sys.argv[2]
-bucket   = sys.argv[3]
-s3  = boto3.client("s3", endpoint_url=endpoint)
-keys = [o["Key"] for o in s3.list_objects_v2(Bucket=bucket, Prefix="events/").get("Contents", [])
-        if o["Key"].endswith(".parquet")]
-for k in keys:
-    data = s3.get_object(Bucket=bucket, Key=k)["Body"].read()
-    try:
-        t = pq.read_table(io.BytesIO(data))
-    except Exception:
-        continue
-    if event_id in set(t.column("id").to_pylist()):
-        sys.exit(0)
-sys.exit(1)
+s3 = boto3.client(
+    "s3",
+    endpoint_url=os.environ["ARCHIVE_S3_ENDPOINT"],
+    region_name="us-east-1",
+)
+
+for page in s3.get_paginator("list_objects_v2").paginate(
+    Bucket=os.environ["ARCHIVE_S3_BUCKET"], Prefix="events/"
+):
+    for obj in page.get("Contents", []):
+        key = obj["Key"]
+        if not key.endswith(".parquet"):
+            continue
+        body = s3.get_object(Bucket=os.environ["ARCHIVE_S3_BUCKET"], Key=key)["Body"].read()
+        try:
+            table = pq.read_table(io.BytesIO(body), columns=["id"])
+        except Exception:
+            continue
+        if event_id in set(table.column("id").to_pylist()):
+            raise SystemExit(0)
+raise SystemExit(1)
 PY
+
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  return "$result"
 }
 
 # Kafka consumer-group offset probe for the Archive plane.
