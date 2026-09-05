@@ -116,6 +116,8 @@ jobs:
           ' /tmp/welkin-manifests.yaml
           rm -f /tmp/welkin-artifact/cilium.yaml
           cp platform/infra/cilium/*.yaml /tmp/welkin-artifact/infra/cilium/
+          cp platform/infra/kyverno/*.yaml /tmp/welkin-artifact/infra/kyverno/
+          cp platform/infra/strimzi/*.yaml /tmp/welkin-artifact/infra/strimzi/
           test "$(grep -c '^kind: HelmRelease$' /tmp/welkin-artifact/foundation/welkin.yaml)" -eq 4
           test "$(grep -c '^kind: HelmRelease$' /tmp/welkin-artifact/apps/welkin.yaml)" -eq 3
           cat > /tmp/welkin-artifact/foundation/kustomization.yaml <<'EOF'
