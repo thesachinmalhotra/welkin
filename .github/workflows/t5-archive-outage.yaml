@@ -69,7 +69,7 @@ jobs:
           tar -xzf /tmp/flux.tgz -C /tmp
           install -m 0755 /tmp/flux /usr/local/bin/flux
           flux version --client
-          flux install --version=2.7.5 --components=source-controller,helm-controller,kustomize-controller,notification-controller
+          flux install --version=v2.7.5 --components=source-controller,helm-controller,kustomize-controller,notification-controller
           kubectl -n flux-system wait --for=condition=Available \
             deployment/source-controller deployment/helm-controller \
             deployment/kustomize-controller deployment/notification-controller \
