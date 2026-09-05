@@ -112,6 +112,7 @@ jobs:
           # foundation -> infra -> apps.
           mkdir -p /tmp/artifact/foundation /tmp/artifact/infra/cilium /tmp/artifact/infra/kyverno /tmp/artifact/infra/strimzi /tmp/artifact/apps
           cp /tmp/welkin-secrets.yaml /tmp/artifact/foundation/welkin-secrets.yaml
+          cp platform/infra/namespaces.yaml /tmp/artifact/foundation/namespaces.yaml
           rm -f /tmp/artifact/foundation/welkin.yaml /tmp/artifact/apps/welkin.yaml
           awk '
           /^# Instance: / {
@@ -135,6 +136,7 @@ jobs:
           apiVersion: kustomize.config.k8s.io/v1beta1
           kind: Kustomization
           resources:
+          - namespaces.yaml
           - welkin.yaml
           - welkin-secrets.yaml
           EOF

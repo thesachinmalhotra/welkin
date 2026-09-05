@@ -100,6 +100,7 @@ jobs:
           timoni bundle build -f platform/welkin.bundle.cue --runtime-from-env > /tmp/welkin-manifests.yaml
           mkdir -p /tmp/welkin-artifact/foundation /tmp/welkin-artifact/infra/cilium /tmp/welkin-artifact/infra/kyverno /tmp/welkin-artifact/infra/strimzi /tmp/welkin-artifact/apps
           cp /tmp/welkin-manifests.yaml /tmp/welkin-artifact/welkin-manifests.yaml
+          cp platform/infra/namespaces.yaml /tmp/welkin-artifact/foundation/namespaces.yaml
           awk '
           /^# Instance: / {
             instance=$3
@@ -124,6 +125,7 @@ jobs:
           apiVersion: kustomize.config.k8s.io/v1beta1
           kind: Kustomization
           resources:
+          - namespaces.yaml
           - welkin.yaml
           EOF
           cat > /tmp/welkin-artifact/infra/kustomization.yaml <<'EOF'

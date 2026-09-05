@@ -24,7 +24,7 @@ product: {
 		// Substrate (infra) plane — portable, cloud-agnostic.
 		strimziVersion: "0.45.0"
 		ciliumVersion:  "1.17.16"
-		kyvernoVersion: "1.14.0"
+		kyvernoVersion: "3.4.0"
 	}
 
 	// Derived from the collector chart version — single source, no drift.
@@ -124,13 +124,6 @@ openmeterValues: {
 		timeout:         15
 	}
 	helmValues: {
-		// Secrets (OpenMeter API key + Stripe key) arrive via SOPS-encrypted
-		// Secrets. OpenMeter reads OPENMETER_API_KEY (its server key) and
-		// STRIPE_API_KEY for the economic plane.
-		envFrom: [
-			{secretRef: {name: "welkin-openmeter-token"}},
-			{secretRef: {name: "welkin-stripe"}},
-		]
 		// postgresql.enabled is universally false — the chart's mergeOverwrite
 		// would replace our sslmode=disable DSN with a TLS-requiring one, so we
 		// disable the subchart entirely and own Postgres as a Welkin economic-plane
@@ -257,11 +250,11 @@ collectorValues: {
 		}
 
 		// Mount the Strimzi TLS user Secret for the welkin_canonical producer.
-		extraVolumes: [{
+		volumes: [{
 			name:      "kafka-tls"
 			secret: {secretName: runtime.kafka.collectorSecret}
 		}]
-		extraVolumeMounts: [{
+		volumeMounts: [{
 			name:      "kafka-tls"
 			mountPath: "/etc/kafka/tls"
 			readOnly: true
@@ -507,11 +500,11 @@ archiveValues: {
 		rbac: create: false
 
 		// Strimzi TLS user Secret for the welkin_canonical consumer.
-		extraVolumes: [{
+		volumes: [{
 			name:      "kafka-tls"
 			secret: {secretName: runtime.kafka.archiveSecret}
 		}]
-		extraVolumeMounts: [{
+		volumeMounts: [{
 			name:      "kafka-tls"
 			mountPath: "/etc/kafka/tls"
 			readOnly: true
@@ -681,7 +674,7 @@ ciliumValues: {
 		}
 
 		// L7 policy engine (Envoy) for Kafka-protocol filtering on shared brokers.
-		enableEnvoyConfig: true
+		envoyConfig: {enabled: true}
 
 		ipam: {mode: "kubernetes"}
 	}
@@ -707,19 +700,12 @@ kyvernoValues: {
 		timeout:         15
 	}
 	helmValues: {
-		replicaCount: 1
 		// ponytail: one replica is enough for admission webhooks at this scale;
 		// raise for HA admission throughput.
 		reportsController: {enabled: true}
 		backgroundController: {enabled: true}
 		cleanupController: {enabled: true}
-		admissionController: {timeoutSeconds: 5}
-		resourceFilters: [
-			// Don't police the CNI / platform control planes.
-			"*[Pod/*/kube-system]",
-			"*[Node/]",
-			"*[Event/*/*]",
-		]
+		admissionController: {replicas: 1, timeoutSeconds: 5}
 	}
 }
 
@@ -740,8 +726,6 @@ strimziValues: {
 	helmValues: {
 		// ponytail: default watch namespaces = same as release ns (welkin-system).
 		// The operator reconciles Kafka/KafkaTopic/KafkaUser in welkin-system.
-		watchNamespaces: [runtime.welkinNamespace]
-		image: {repository: "registry-1.docker.io/strimzi"}
 	}
 }
 

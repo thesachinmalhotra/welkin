@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: welkin-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openmeter-system
